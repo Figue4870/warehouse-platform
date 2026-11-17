@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Cloud Platform</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div>
+            <h1>📦 Bodega <span id="warehouse-id">…</span></h1>
+            <p class="subtitle">Warehouse Cloud Platform · Fase 1 (API + PostgreSQL) · Fase 2 (Redis)</p>
+        </div>
+        <div class="badges">
+            <span id="badge-api" class="status-badge loading">API…</span>
+            <span id="badge-db" class="status-badge loading">PostgreSQL…</span>
+            <span id="badge-redis" class="status-badge loading">Redis…</span>
+        </div>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- CREAR PRODUCTO -->
+        <section class="card">
+            <h2>Nuevo producto</h2>
+            <form id="product-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sku">SKU (único)</label>
+                        <input type="text" id="sku" required maxlength="64" pattern="[A-Za-z0-9._\-]+" placeholder="Ej: EPP-CASCO-001">
+                    </div>
+                    <div class="form-group">
+                        <label for="unit">Unidad</label>
+                        <input type="text" id="unit" required maxlength="30" placeholder="UNIDAD, CAJA, KG">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="name">Nombre universal</label>
+                    <input type="text" id="name" required maxlength="200" placeholder="Ej: Casco de seguridad blanco">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="category">Categoría</label>
+                        <input type="text" id="category" maxlength="100" placeholder="Ej: EPP">
+                    </div>
+                    <div class="form-group">
+                        <label for="lot">Lote</label>
+                        <input type="text" id="lot" maxlength="100" placeholder="Ej: L-2026-10-A">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="supplier">Proveedor</label>
+                    <input type="text" id="supplier" maxlength="200" placeholder="Ej: Seguridad Industrial del Valle">
+                </div>
+                <div class="form-row three">
+                    <div class="form-group">
+                        <label for="supplier_cost">Costo proveedor</label>
+                        <input type="number" id="supplier_cost" min="0" step="0.01" placeholder="18000">
+                    </div>
+                    <div class="form-group">
+                        <label for="retail_price">Precio tienda</label>
+                        <input type="number" id="retail_price" min="0" step="0.01" placeholder="32000">
+                    </div>
+                    <div class="form-group">
+                        <label for="wholesale_price">Precio mayorista</label>
+                        <input type="number" id="wholesale_price" min="0" step="0.01" placeholder="26000">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="description">Descripción</label>
+                    <textarea id="description" placeholder="Detalles opcionales..."></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Registrar (inventario inicia en 0)</button>
+            </form>
+        </section>
+
+        <!-- MOVIMIENTOS -->
+        <section class="card">
+            <h2>Registrar movimiento</h2>
+            <form id="movement-form">
+                <div class="form-group">
+                    <label for="move-product-id">Producto</label>
+                    <select id="move-product-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="move-type">Tipo de operación</label>
+                    <select id="move-type" required>
+                        <option value="RECEIPT">RECEIPT · Entrada / compra (+)</option>
+                        <option value="SHIPMENT">SHIPMENT · Salida / venta (−)</option>
+                        <option value="ADJUSTMENT">ADJUSTMENT · Ajuste por desfase (±)</option>
+                        <option value="RESERVATION">RESERVATION · Reservar (disponible → reservado)</option>
+                        <option value="RELEASE">RELEASE · Liberar reserva (reservado → disponible)</option>
+                        <option value="RETURN">RETURN · Devolución (+)</option>
+                        <option value="TRANSFER_IN">TRANSFER_IN · Entrada desde otra bodega (+)</option>
+                        <option value="TRANSFER_OUT">TRANSFER_OUT · Salida hacia otra bodega (−)</option>
+                    </select>
+                    <small id="move-help" class="help"></small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="move-quantity">Cantidad</label>
+                        <input type="number" id="move-quantity" min="1" step="1" required placeholder="Ej: 50">
+                    </div>
+                    <div class="form-group">
+                        <label for="move-lot">Lote (opcional)</label>
+                        <input type="text" id="move-lot" maxlength="100" placeholder="Ej: L-2026-10-A">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="move-reference">Referencia / motivo</label>
+                    <input type="text" id="move-reference" maxlength="200" placeholder="Ej: FAC-1001, guía, motivo del ajuste">
+                </div>
+                <button type="submit" class="btn-secondary">Ejecutar transacción</button>
+            </form>
+        </section>
+
+        <!-- INVENTARIO -->
+        <section class="card wide">
+            <div class="card-header">
+                <h2>Inventario</h2>
+                <button id="refresh-stock-btn" class="btn-small">🔄 Actualizar</button>
+            </div>
+            <p class="help">La columna <strong>Caché</strong> muestra de dónde vino el saldo: <span class="pill hit">HIT</span> Redis · <span class="pill miss">MISS</span> PostgreSQL (y se guardó en Redis) · <span class="pill bypass">BYPASS</span> PostgreSQL sin Redis.</p>
+            <div class="table-container">
+                <table id="stock-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>SKU</th>
+                            <th>Producto</th>
+                            <th>Proveedor / lote</th>
+                            <th>Precio tienda</th>
+                            <th>Disponible</th>
+                            <th>Reservado</th>
+                            <th>Caché</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- CACHÉ -->
+        <section class="card">
+            <div class="card-header">
+                <h2>Caché Redis</h2>
+                <div class="actions">
+                    <button id="refresh-metrics-btn" class="btn-small">🔄</button>
+                    <button id="reset-metrics-btn" class="btn-small">Reiniciar contadores</button>
+                </div>
+            </div>
+            <div class="metrics-grid" id="metrics-grid"></div>
+        </section>
+
+        <!-- ALERTAS -->
+        <section class="card">
+            <div class="card-header">
+                <h2>Alertas automáticas</h2>
+                <button id="refresh-alerts-btn" class="btn-small">🔄</button>
+            </div>
+            <ul id="alerts-list" class="alerts-list"></ul>
+        </section>
+    </main>
+
+    <!-- MODAL DE HISTORIAL -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="modal-title">Historial de movimientos</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Tipo</th>
+                            <th>Cantidad</th>
+                            <th>Disponible después</th>
+                            <th>Reservado después</th>
+                            <th>Lote</th>
+                            <th>Referencia</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

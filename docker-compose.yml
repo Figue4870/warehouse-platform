@@ -1,0 +1,13 @@
+# Dos bodegas independientes (WH-001 y WH-002), cada una con su API, PostgreSQL y Redis.
+#   docker compose up -d --build
+
+include:
+  # Bodega 1  ->  API http://localhost:8001  |  Web http://localhost:8081
+  - path: docker/components/wh_001/compose-warehouse.yml
+    project_directory: .
+    env_file: docker/components/wh_001/.env
+
+  # Bodega 2  ->  API http://localhost:8002  |  Web http://localhost:8082
+  - path: docker/components/wh_002/compose-warehouse.yml
+    project_directory: .
+    env_file: docker/components/wh_002/.env

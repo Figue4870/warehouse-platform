@@ -1,0 +1,173 @@
+import logging
+from typing import List, Tuple
+
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
+
+from app.cache import InventoryCache, MISS, get_inventory_cache
+from app.config import settings
+from app.modules.alerts.alerts_service import DISCREPANCY, OUT_OF_STOCK, AlertService
+from app.modules.inventory.inventory_repository import InventoryRepository
+from app.modules.inventory.inventory_rules import calculate_new_balance
+from app.modules.inventory.models import InventoryEntity
+from app.modules.inventory.schemas import (
+    InventoryResponse,
+    MovementCreate,
+    MovementResponse,
+    MovementResult,
+    MovementType,
+)
+from app.modules.shared.errors import BusinessRuleError
+
+logger = logging.getLogger("warehouse.inventory")
+
+
+class InventoryService:
+    def __init__(self, db: Session, cache: InventoryCache | None = None):
+        self.db = db
+        self.repo = InventoryRepository(db)
+        self.alerts = AlertService(db)
+        self.cache = cache if cache is not None else get_inventory_cache()
+
+    # Métodos que usa ProductService
+    def initialize_stock(self, product_id: int) -> None:
+        """Crea el saldo en 0. No hace commit: participa en la transacción de quien llama."""
+        self.repo.initialize_inventory(product_id)
+
+    def lock_inventory(self, product_id: int) -> InventoryEntity:
+        """Bloquea la fila de inventario (FOR UPDATE). No hace commit."""
+        row = self.repo.get_by_product_for_update(product_id)
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventario no encontrado")
+        return row[0]
+
+    def invalidate_cache(self, product_id: int) -> None:
+        self.cache.invalidate(product_id)
+
+    # GET /inventory/{product_id}: cache-aside (Fase 2)
+    def get_stock(self, product_id: int) -> Tuple[dict, str]:
+        """Devuelve (inventario, estado_cache) donde estado_cache es HIT, MISS o BYPASS."""
+        # 1) Primero preguntar a Redis
+        lookup = self.cache.get(product_id)
+        if lookup.value is not None:
+            return lookup.value, lookup.status  # HIT: PostgreSQL ni se entera
+
+        # 2) MISS (o Redis apagado/caído): ir a la fuente de verdad
+        inventory = self.repo.get_by_product(product_id)
+        if not inventory:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventario no encontrado")
+        data = InventoryResponse.model_validate(inventory).model_dump(mode="json")
+
+        # 3) Guardar en Redis con TTL para las próximas lecturas
+        if lookup.status == MISS:
+            self.cache.set(product_id, data)
+        return data, lookup.status
+
+    # POST /inventory/movements: una sola transacción (Fase 1)
+    def process_movement(self, movement_in: MovementCreate) -> MovementResult:
+        """Registra un movimiento en una sola transacción (todo o nada)."""
+        product_id = movement_in.product_id
+        m_type = MovementType(movement_in.type)
+        alerts_generated: List[str] = []
+        try:
+            # 1. Leer el saldo actual bloqueando la fila
+            row = self.repo.get_by_product_for_update(product_id)
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No existe inventario para el producto {product_id} en la bodega {settings.WAREHOUSE_ID}",
+                )
+            inventory, product_active = row
+            if not product_active:
+                raise BusinessRuleError("El producto está dado de baja; no admite movimientos")
+
+            before_qty = inventory.quantity
+            before_reserved = inventory.reserved_quantity
+
+            # 2. Aplicar la regla de negocio (lanza BusinessRuleError si quedaría negativo)
+            new_qty, new_reserved = calculate_new_balance(
+                m_type, movement_in.quantity, before_qty, before_reserved
+            )
+
+            # 3. Guardar nuevo saldo + historial
+            self.repo.update_stock(inventory, new_qty, new_reserved)
+            movement = self.repo.register_movement(
+                product_id=product_id,
+                m_type=m_type.value,
+                qty=movement_in.quantity,
+                quantity_after=new_qty,
+                reserved_after=new_reserved,
+                lot=movement_in.lot,
+                ref=movement_in.reference,
+            )
+
+            # 4. Logs automáticos que pide el PDF (misma transacción)
+            if before_qty > 0 and new_qty == 0:
+                self.alerts.register(
+                    product_id,
+                    OUT_OF_STOCK,
+                    f"Producto {product_id} agotado en {settings.WAREHOUSE_ID} tras {m_type.value} "
+                    f"de {movement_in.quantity} (reservado: {new_reserved})",
+                    movement.id,
+                )
+                alerts_generated.append(OUT_OF_STOCK)
+            if m_type == MovementType.ADJUSTMENT:
+                self.alerts.register(
+                    product_id,
+                    DISCREPANCY,
+                    f"Desfase de inventario en producto {product_id}: el sistema tenía {before_qty}, "
+                    f"se ajustó {movement_in.quantity:+d} (ahora {new_qty}). "
+                    f"Motivo: {movement_in.reference or 'sin referencia'}",
+                    movement.id,
+                )
+                alerts_generated.append(DISCREPANCY)
+
+            # 5. Confirmar TODO junto
+            self.db.commit()
+
+        except BusinessRuleError as error:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.message)
+        except HTTPException:
+            self.db.rollback()
+            raise
+        except IntegrityError:
+            # Ej.: el CHECK (quantity >= 0) de PostgreSQL rechazó el cambio
+            self.db.rollback()
+            logger.exception("La base de datos rechazó el movimiento", extra={"event": "movement_integrity_error"})
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La base de datos rechazó la operación")
+        except OperationalError:
+            # PostgreSQL caído: main.py lo convierte en HTTP 503
+            self.db.rollback()
+            raise
+        except Exception:
+            self.db.rollback()
+            logger.exception("Error inesperado procesando movimiento", extra={"event": "movement_error"})
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno procesando el movimiento")
+
+        # 6. Invalidación síncrona del caché (Estrategia A) — SIEMPRE después del COMMIT
+        self.cache.invalidate(product_id)
+
+        self.db.refresh(movement)
+        context = {
+            "product_id": product_id,
+            "movement_id": movement.id,
+            "type": m_type.value,
+            "quantity": movement_in.quantity,
+            "quantity_after": new_qty,
+            "reserved_after": new_reserved,
+        }
+        logger.info("Movimiento registrado", extra={"event": "inventory_movement_registered", "context": context})
+        if OUT_OF_STOCK in alerts_generated:
+            logger.warning("Producto agotado", extra={"event": "out_of_stock", "context": context})
+        if DISCREPANCY in alerts_generated:
+            logger.warning("Desfase de inventario registrado", extra={"event": "inventory_discrepancy", "context": context})
+
+        result = MovementResponse.model_validate(movement).model_dump()
+        return MovementResult(**result, alerts_generated=alerts_generated)
+
+    def get_movements(self, product_id: int, limit: int, offset: int):
+        if self.repo.get_by_product(product_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventario no encontrado")
+        return self.repo.get_movements_by_product(product_id, limit, offset)
