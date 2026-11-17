@@ -5,6 +5,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.cache import InventoryCache
+from app.events import types as events
+from app.events.outbox import OutboxWriter
+from app.events.payloads import product_payload
 from app.modules.inventory.inventory_service import InventoryService
 from app.modules.products.products_repository import ProductRepository
 from app.modules.products.schemas import ProductCreate, ProductUpdate
@@ -18,6 +21,7 @@ class ProductService:
         self.product_repo = ProductRepository(db)
         # Dependencia hacia el SERVICIO del módulo vecino (no hacia su repositorio)
         self.inventory_service = InventoryService(db, cache)
+        self.outbox = OutboxWriter(db)
 
     def create_product_with_inventory(self, product_in: ProductCreate):
         """Crea el producto y su saldo inicial (0) en la MISMA transacción."""
@@ -26,6 +30,8 @@ class ProductService:
         try:
             product = self.product_repo.create(product_in)
             self.inventory_service.initialize_stock(product.id)
+            # Fase 3: evento en la misma transacción (si el commit falla, el evento tampoco existe)
+            self.outbox.add(events.PRODUCT_CREATED, "product", product.sku, product_payload(product))
             self.db.commit()
         except IntegrityError:
             # Dos requests crearon el mismo SKU a la vez: la restricción UNIQUE de la BD lo detiene
@@ -61,6 +67,9 @@ class ProductService:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{required} no puede quedar vacío")
         try:
             self.product_repo.update(product, changes)
+            product.version = (product.version or 1) + 1
+            self.db.flush()  # aplica updated_at antes de armar el evento
+            self.outbox.add(events.PRODUCT_UPDATED, "product", product.sku, product_payload(product))
             self.db.commit()
         except IntegrityError:
             self.db.rollback()
@@ -84,6 +93,9 @@ class ProductService:
                     ),
                 )
             product.is_active = False
+            product.version = (product.version or 1) + 1
+            self.db.flush()
+            self.outbox.add(events.PRODUCT_DEACTIVATED, "product", product.sku, product_payload(product))
             self.db.commit()
         except HTTPException:
             self.db.rollback()

@@ -10,7 +10,7 @@
     <header>
         <div>
             <h1>📦 Bodega <span id="warehouse-id">…</span></h1>
-            <p class="subtitle">Warehouse Cloud Platform · Fase 1 (API + PostgreSQL) · Fase 2 (Redis)</p>
+            <p class="subtitle">Warehouse Cloud Platform · Fase 1 (API + PostgreSQL) · Fase 2 (Redis) · Fase 3 (RabbitMQ + workers)</p>
         </div>
         <div class="badges">
             <span id="badge-api" class="status-badge loading">API…</span>
@@ -160,6 +160,42 @@
                 <button id="refresh-alerts-btn" class="btn-small">🔄</button>
             </div>
             <ul id="alerts-list" class="alerts-list"></ul>
+        </section>
+
+        <!-- REPORTES ASÍNCRONOS (Fase 3) -->
+        <section class="card wide">
+            <div class="card-header">
+                <h2>Reportes (asíncronos)</h2>
+                <button id="refresh-reports-btn" class="btn-small">🔄</button>
+            </div>
+            <p class="help">La API responde <strong>202 Accepted</strong> al instante; el <em>report-worker</em> genera el reporte en segundo plano a través de RabbitMQ.</p>
+            <form id="report-form" class="form-row report-form">
+                <div class="form-group">
+                    <label for="report-type">Tipo de reporte</label>
+                    <select id="report-type">
+                        <option value="STOCK_VALUATION">Inventario valorizado</option>
+                        <option value="MOVEMENTS_SUMMARY">Movimientos y ventas</option>
+                        <option value="LOW_STOCK">Poco stock</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="report-from">Desde (movimientos)</label>
+                    <input type="date" id="report-from">
+                </div>
+                <div class="form-group">
+                    <label for="report-to">Hasta (movimientos)</label>
+                    <input type="date" id="report-to">
+                </div>
+                <button type="submit" class="btn-primary">Pedir reporte</button>
+            </form>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr><th>Trabajo</th><th>Tipo</th><th>Estado</th><th>Pedido</th><th>Resultado</th></tr>
+                    </thead>
+                    <tbody id="reports-table-body"></tbody>
+                </table>
+            </div>
         </section>
     </main>
 

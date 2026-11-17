@@ -14,3 +14,5 @@ class AlertResponse(BaseModel):
     message: str
     movement_id: Optional[int]
     created_at: datetime
+    notified_at: Optional[datetime] = None
+    notification_channel: Optional[str] = None

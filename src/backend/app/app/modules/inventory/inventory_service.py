@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.cache import InventoryCache, MISS, get_inventory_cache
 from app.config import settings
+from app.events import types as events
+from app.events.outbox import OutboxWriter
+from app.events.payloads import alert_payload, movement_payload
 from app.modules.alerts.alerts_service import DISCREPANCY, OUT_OF_STOCK, AlertService
 from app.modules.inventory.inventory_repository import InventoryRepository
 from app.modules.inventory.inventory_rules import calculate_new_balance
@@ -28,6 +31,7 @@ class InventoryService:
         self.db = db
         self.repo = InventoryRepository(db)
         self.alerts = AlertService(db)
+        self.outbox = OutboxWriter(db)
         self.cache = cache if cache is not None else get_inventory_cache()
 
     # Métodos que usa ProductService
@@ -43,7 +47,9 @@ class InventoryService:
         return row[0]
 
     def invalidate_cache(self, product_id: int) -> None:
-        self.cache.invalidate(product_id)
+        # Estrategia A (síncrona). Con CACHE_INVALIDATION_MODE=async la hace solo el cache-worker.
+        if settings.CACHE_INVALIDATION_MODE in ("sync", "both"):
+            self.cache.invalidate(product_id)
 
     # GET /inventory/{product_id}: cache-aside (Fase 2)
     def get_stock(self, product_id: int) -> Tuple[dict, str]:
@@ -78,8 +84,8 @@ class InventoryService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"No existe inventario para el producto {product_id} en la bodega {settings.WAREHOUSE_ID}",
                 )
-            inventory, product_active = row
-            if not product_active:
+            inventory, product = row
+            if not product.is_active:
                 raise BusinessRuleError("El producto está dado de baja; no admite movimientos")
 
             before_qty = inventory.quantity
@@ -102,18 +108,23 @@ class InventoryService:
                 ref=movement_in.reference,
             )
 
-            # 4. Logs automáticos que pide el PDF (misma transacción)
+            # 4. Evento del movimiento para RabbitMQ (Fase 3) — misma transacción
+            self.outbox.add(events.INVENTORY_MOVEMENT_RECORDED, "inventory", product.sku,
+                            movement_payload(movement, product, inventory))
+
+            # 5. Logs automáticos que pide el PDF (misma transacción) + su evento
             if before_qty > 0 and new_qty == 0:
-                self.alerts.register(
+                alert = self.alerts.register(
                     product_id,
                     OUT_OF_STOCK,
                     f"Producto {product_id} agotado en {settings.WAREHOUSE_ID} tras {m_type.value} "
                     f"de {movement_in.quantity} (reservado: {new_reserved})",
                     movement.id,
                 )
+                self.outbox.add(events.STOCK_DEPLETED, "alert", alert.id, alert_payload(alert, product))
                 alerts_generated.append(OUT_OF_STOCK)
             if m_type == MovementType.ADJUSTMENT:
-                self.alerts.register(
+                alert = self.alerts.register(
                     product_id,
                     DISCREPANCY,
                     f"Desfase de inventario en producto {product_id}: el sistema tenía {before_qty}, "
@@ -121,9 +132,10 @@ class InventoryService:
                     f"Motivo: {movement_in.reference or 'sin referencia'}",
                     movement.id,
                 )
+                self.outbox.add(events.STOCK_DISCREPANCY, "alert", alert.id, alert_payload(alert, product))
                 alerts_generated.append(DISCREPANCY)
 
-            # 5. Confirmar TODO junto
+            # 6. Confirmar TODO junto
             self.db.commit()
 
         except BusinessRuleError as error:
@@ -146,8 +158,8 @@ class InventoryService:
             logger.exception("Error inesperado procesando movimiento", extra={"event": "movement_error"})
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno procesando el movimiento")
 
-        # 6. Invalidación síncrona del caché (Estrategia A) — SIEMPRE después del COMMIT
-        self.cache.invalidate(product_id)
+        # 7. Invalidación síncrona del caché (Estrategia A) — SIEMPRE después del COMMIT
+        self.invalidate_cache(product_id)
 
         self.db.refresh(movement)
         context = {

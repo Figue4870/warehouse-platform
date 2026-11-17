@@ -27,6 +27,7 @@ class ProductEntity(Base):
     retail_price = Column(Numeric(14, 2))            # precio de venta en tienda
     wholesale_price = Column(Numeric(14, 2))         # precio mayoristas / terceros
     is_active = Column(Boolean, nullable=False, default=True)  # False = dado de baja (borrado lógico)
+    version = Column(Integer, nullable=False, default=1)       # Fase 3: sube con cada cambio (sincronización)
     created_at = Column(DateTime(timezone=True), nullable=False, default=schemas_utils.current_utc_time)
     updated_at = Column(
         DateTime(timezone=True),

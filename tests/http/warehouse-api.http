@@ -164,3 +164,41 @@ DELETE {{baseUrl}}/products/{{productId}}
 
 ### 27. Ver también los productos dados de baja
 GET {{baseUrl}}/products?include_inactive=true
+
+### ---------------------------------------------------------------------
+### REPORTES ASÍNCRONOS (Fase 3) — la API responde 202 y un worker hace el trabajo
+### ---------------------------------------------------------------------
+
+### 28. Pedir un reporte de inventario valorizado -> 202 Accepted
+# @name pedirReporte
+POST {{baseUrl}}/reports
+Content-Type: application/json
+
+{ "type": "STOCK_VALUATION" }
+
+@jobId = {{pedirReporte.response.body.job_id}}
+
+### 29. Consultar el trabajo (PENDING -> PROCESSING -> COMPLETED)
+GET {{baseUrl}}/reports/jobs/{{jobId}}
+
+### 30. Descargar el resultado en CSV
+GET {{baseUrl}}/reports/jobs/{{jobId}}/download
+
+### 31. Reporte de movimientos y ventas en un rango de fechas
+POST {{baseUrl}}/reports
+Content-Type: application/json
+
+{ "type": "MOVEMENTS_SUMMARY", "params": { "date_from": "2026-11-01", "date_to": "2026-11-30" } }
+
+### 32. ERROR esperado 422: rango de fechas al revés
+POST {{baseUrl}}/reports
+Content-Type: application/json
+
+{ "type": "MOVEMENTS_SUMMARY", "params": { "date_from": "2026-12-01", "date_to": "2026-11-01" } }
+
+### 33. Ver eventos pendientes de publicar (outbox) y la última secuencia
+GET {{baseUrl}}/metrics
+
+### 34. Trazabilidad: enviar tu propio correlation_id (aparece en los logs de la API y los workers)
+GET {{baseUrl}}/health
+X-Correlation-ID: COR-20261117-DEMO0001

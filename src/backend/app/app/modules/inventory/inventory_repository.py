@@ -34,10 +34,10 @@ class InventoryRepository:
             .first()
         )
 
-    def get_by_product_for_update(self, product_id: int) -> Optional[Tuple[InventoryEntity, bool]]:
+    def get_by_product_for_update(self, product_id: int) -> Optional[Tuple[InventoryEntity, ProductEntity]]:
         """Lee el saldo con bloqueo de fila (SELECT ... FOR UPDATE)."""
         row = (
-            self.db.query(InventoryEntity, ProductEntity.is_active)
+            self.db.query(InventoryEntity, ProductEntity)
             .join(ProductEntity, ProductEntity.id == InventoryEntity.product_id)
             .filter(
                 InventoryEntity.product_id == product_id,
@@ -48,11 +48,12 @@ class InventoryRepository:
         )
         if row is None:
             return None
-        return row[0], bool(row[1])
+        return row[0], row[1]
 
     def update_stock(self, inventory: InventoryEntity, quantity: int, reserved_quantity: int) -> None:
         inventory.quantity = quantity
         inventory.reserved_quantity = reserved_quantity
+        inventory.version = (inventory.version or 0) + 1  # Fase 3: versión para sincronizar
         self.db.add(inventory)
 
     def register_movement(

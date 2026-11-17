@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "c9a09cbb-6658-4bb3-a854-1492c190488e",
+    "_postman_id": "93c93de1-40ec-41b8-a413-2b2b6bcfaa82",
     "name": "Warehouse Cloud Platform — Bodega (Fase 1 + Fase 2)",
     "description": "Ejecutar en orden. La petición 2 guarda productId automáticamente. Mira la cabecera X-Cache en las lecturas de inventario.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -670,6 +670,181 @@
           ]
         }
       }
+    },
+    {
+      "name": "28. Pedir un reporte de inventario valorizado -> 202 Accepted",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/reports",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"type\": \"STOCK_VALUATION\" }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 202) { pm.collectionVariables.set('jobId', pm.response.json().job_id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "29. Consultar el trabajo (PENDING -> PROCESSING -> COMPLETED)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/reports/jobs/{{jobId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports",
+            "jobs",
+            "{{jobId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "30. Descargar el resultado en CSV",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/reports/jobs/{{jobId}}/download",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports",
+            "jobs",
+            "{{jobId}}",
+            "download"
+          ]
+        }
+      }
+    },
+    {
+      "name": "31. Reporte de movimientos y ventas en un rango de fechas",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/reports",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"type\": \"MOVEMENTS_SUMMARY\", \"params\": { \"date_from\": \"2026-11-01\", \"date_to\": \"2026-11-30\" } }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "32. ERROR esperado 422: rango de fechas al revés",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/reports",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"type\": \"MOVEMENTS_SUMMARY\", \"params\": { \"date_from\": \"2026-12-01\", \"date_to\": \"2026-11-01\" } }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "33. Ver eventos pendientes de publicar (outbox) y la última secuencia",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/metrics",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "metrics"
+          ]
+        }
+      }
+    },
+    {
+      "name": "34. Trazabilidad: enviar tu propio correlation_id (aparece en los logs de la API y los workers)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Correlation-ID",
+            "value": "COR-20261117-DEMO0001"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
     }
   ],
   "variable": [
@@ -680,6 +855,10 @@
     {
       "key": "productId",
       "value": "1"
+    },
+    {
+      "key": "jobId",
+      "value": ""
     }
   ]
 }

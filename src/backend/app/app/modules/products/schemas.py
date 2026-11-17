@@ -55,5 +55,6 @@ class ProductResponse(ProductBase):
     id: int
     sku: str
     is_active: bool
+    version: int = 1
     created_at: datetime
     updated_at: datetime

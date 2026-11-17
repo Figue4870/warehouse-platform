@@ -88,3 +88,11 @@ td.out { color: var(--accent-red); font-weight: bold; }
     .card.wide { grid-column: span 1; }
     .form-row, .form-row.three { grid-template-columns: 1fr; }
 }
+
+/* Reportes asíncronos (Fase 3) */
+.report-form { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; }
+.report-form button { margin-bottom: 1rem; }
+a.action-link { display: inline-block; }
+@media (max-width: 900px) {
+    .report-form { grid-template-columns: 1fr; }
+}

@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 30         # Tiempo de vida de cada dato en caché
     REDIS_TIMEOUT_SECONDS: float = 0.5  # Si Redis no responde en este tiempo, se ignora
     REDIS_RETRY_AFTER_SECONDS: int = 5  # Tras un fallo, cuánto esperar antes de volver a intentar Redis
+    # sync = la API borra la clave, async = la borra el cache-worker, both = las dos
+    CACHE_INVALIDATION_MODE: str = "both"
+
+    # Fase 3: RabbitMQ, outbox y workers
+    AMQP_URL: str = "amqp://warehouse:warehouse@localhost:5672/%2F"
+    OUTBOX_BATCH_SIZE: int = 100            # eventos que el relay publica por vuelta
+    OUTBOX_POLL_SECONDS: float = 0.5        # cada cuánto revisa el relay si hay pendientes
+    OUTBOX_RETENTION_DAYS: int = 30         # días que se guardan los eventos ya publicados
+    WORKER_MAX_RETRIES: int = 5             # intentos antes de mandar un mensaje a la DLQ
+    WORKER_RETRY_DELAY_MS: int = 5000       # espera entre intentos
+    REPORT_SIMULATED_DELAY_SECONDS: float = 0  # >0 para "ver" que el reporte es asíncrono
+    NOTIFICATION_WEBHOOK_URL: str | None = None  # opcional: URL a la que se envía cada alerta
 
 
 settings = Settings()

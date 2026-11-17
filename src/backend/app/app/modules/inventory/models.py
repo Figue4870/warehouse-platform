@@ -33,6 +33,8 @@ class InventoryEntity(Base):
     warehouse_id = Column(String(20), nullable=False)
     quantity = Column(Integer, nullable=False, default=0)
     reserved_quantity = Column(Integer, nullable=False, default=0)
+    # Sube en 1 con cada movimiento; la central ignora versiones viejas.
+    version = Column(Integer, nullable=False, default=0)
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,

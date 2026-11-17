@@ -5,6 +5,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
+from platform_common.correlation import new_correlation_id, reset_correlation_id, set_correlation_id
+
 from app.config import settings
 from app.database import Base, engine
 from app.logging_config import setup_logging
@@ -12,6 +14,7 @@ from app.modules.alerts.alerts_controller import router as alerts_controller
 from app.modules.health.health_controller import router as health_controller
 from app.modules.inventory.inventory_controller import router as inventory_controller
 from app.modules.products.products_controller import router as products_controller
+from app.modules.reports.reports_controller import router as reports_controller
 
 logger = logging.getLogger("warehouse.api")
 
@@ -36,11 +39,25 @@ app = FastAPI(
     title=f"Warehouse Cloud Platform — Bodega {settings.WAREHOUSE_ID}",
     description=(
         "Fase 1: API + PostgreSQL (transacciones, inventario nunca negativo, historial).\n\n"
-        "Fase 2: Redis Cache-Aside en GET /inventory/{product_id} (cabecera X-Cache: HIT/MISS/BYPASS)."
+        "Fase 2: Redis Cache-Aside en GET /inventory/{product_id} (cabecera X-Cache: HIT/MISS/BYPASS).\n\n"
+        "Fase 3: eventos con Transactional Outbox + RabbitMQ, workers y reportes asíncronos (POST /reports -> 202)."
     ),
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Fase 3: cada petición lleva un correlation_id (se respeta el que mande el cliente)."""
+    correlation_id = request.headers.get("X-Correlation-ID") or new_correlation_id()
+    token = set_correlation_id(correlation_id)
+    try:
+        response = await call_next(request)
+    finally:
+        reset_correlation_id(token)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
 
 
 @app.exception_handler(OperationalError)
@@ -61,3 +78,4 @@ app.include_router(health_controller)
 app.include_router(products_controller)
 app.include_router(inventory_controller)
 app.include_router(alerts_controller)
+app.include_router(reports_controller)

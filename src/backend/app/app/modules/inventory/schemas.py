@@ -66,4 +66,5 @@ class InventoryResponse(BaseModel):
     warehouse_id: str
     quantity: int
     reserved_quantity: int
+    version: int = 0
     updated_at: datetime

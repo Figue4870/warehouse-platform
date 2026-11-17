@@ -13,7 +13,7 @@ class ProductRepository:
         self.db = db
 
     def create(self, product_in: ProductCreate) -> ProductEntity:
-        product = ProductEntity(**product_in.model_dump(), is_active=True)
+        product = ProductEntity(**product_in.model_dump(), is_active=True, version=1)
         self.db.add(product)
         self.db.flush()  # Envía el INSERT para obtener el ID, sin confirmar la transacción
         return product

@@ -19,6 +19,7 @@ class AlertRepository:
             movement_id=movement_id,
         )
         self.db.add(alert)
+        self.db.flush()  # para conocer alert.id (va dentro del evento)
         return alert
 
     def list(self, limit: int, alert_type: Optional[str], product_id: Optional[int]) -> List[InventoryAlertEntity]:

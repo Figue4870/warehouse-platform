@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkHealth();
     loadDashboard().then(loadMetrics); // métricas después de leer la tabla
     loadAlerts();
+    loadReports();
 
     document.getElementById('product-form').addEventListener('submit', createProduct);
     document.getElementById('movement-form').addEventListener('submit', executeMovement);
@@ -26,6 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('refresh-metrics-btn').addEventListener('click', loadMetrics);
     document.getElementById('reset-metrics-btn').addEventListener('click', resetMetrics);
     document.getElementById('refresh-alerts-btn').addEventListener('click', loadAlerts);
+    document.getElementById('refresh-reports-btn').addEventListener('click', loadReports);
+    document.getElementById('report-form').addEventListener('submit', requestReport);
     document.querySelector('.close-modal').addEventListener('click', () => {
         document.getElementById('history-modal').style.display = 'none';
     });
@@ -352,12 +355,82 @@ async function loadAlerts() {
             text.textContent = ` ${a.message}`;
             const when = document.createElement('small');
             when.className = 'muted block';
-            when.textContent = new Date(a.created_at).toLocaleString();
+            when.textContent = new Date(a.created_at).toLocaleString() +
+                (a.notified_at ? ` · ✓ notificada al administrador (${a.notification_channel})` : ' · pendiente de notificar');
             li.append(text, when);
             list.appendChild(li);
         }
     } catch {
         list.textContent = 'No se pudieron leer las alertas.';
+    }
+}
+
+// ---------- reportes asíncronos (Fase 3) ----------
+let reportsTimer = null;
+
+async function requestReport(e) {
+    e.preventDefault();
+    const params = {};
+    const from = document.getElementById('report-from').value;
+    const to = document.getElementById('report-to').value;
+    if (from) params.date_from = from;
+    if (to) params.date_to = to;
+    try {
+        const res = await fetch(`${API_BASE}/reports`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: document.getElementById('report-type').value, params }),
+        });
+        if (res.status !== 202) throw new Error(await readError(res));
+        const data = await res.json();
+        showToast(`202 Accepted · ${data.job_id} en proceso`, 'ok');
+        loadReports();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function loadReports() {
+    const tbody = document.getElementById('reports-table-body');
+    try {
+        const res = await fetch(`${API_BASE}/reports/jobs?limit=10`);
+        const jobs = await res.json();
+        tbody.replaceChildren();
+        if (jobs.length === 0) {
+            const tr = document.createElement('tr');
+            const td = cell('Aún no hay reportes.');
+            td.colSpan = 5;
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        let running = false;
+        for (const job of jobs) {
+            const tr = document.createElement('tr');
+            tr.appendChild(cell(job.id, 'strong'));
+            tr.appendChild(cell(job.report_type));
+            const statusTd = document.createElement('td');
+            const kind = job.status === 'COMPLETED' ? 'hit' : (job.status === 'FAILED' ? 'bypass' : 'miss');
+            statusTd.appendChild(pill(job.status, kind));
+            tr.appendChild(statusTd);
+            tr.appendChild(cell(new Date(job.requested_at).toLocaleString()));
+            const resultTd = document.createElement('td');
+            if (job.status === 'COMPLETED') {
+                const link = document.createElement('a');
+                link.className = 'action-link';
+                link.href = `${API_BASE}/reports/jobs/${encodeURIComponent(job.id)}/download`;
+                link.textContent = `Descargar CSV (${job.result.rows.length} filas)`;
+                resultTd.appendChild(link);
+            } else {
+                resultTd.textContent = job.error || '…';
+                running = running || job.status === 'PENDING' || job.status === 'PROCESSING';
+            }
+            tr.appendChild(resultTd);
+            tbody.appendChild(tr);
+        }
+        clearTimeout(reportsTimer);
+        if (running) reportsTimer = setTimeout(loadReports, 1500);  // sigue consultando hasta que termine
+    } catch {
+        tbody.textContent = 'No se pudieron leer los reportes.';
     }
 }
 
