@@ -12,3 +12,14 @@ output "warehouses" {
     }
   }
 }
+
+output "central" {
+  description = "Plataforma central (Fase 7)"
+  value = {
+    public_ip  = module.central.public_ip
+    private_ip = module.central.private_ip
+    api_docs   = "http://${module.central.public_ip}:${var.central_port}/docs"
+    rabbitmq   = "http://${module.central.public_ip}:${var.central_rabbit_mgmt_port}"
+    ssh        = "ssh -i labsuser.pem ubuntu@${module.central.public_ip}"
+  }
+}

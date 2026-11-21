@@ -4,7 +4,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from platform_common.events import encode_event
+from platform_common.events import build_event, encode_event, new_event_id
 from platform_common.messaging import GracefulStop, ReliablePublisher
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,7 +14,9 @@ from app.config import settings
 from app.database import SessionLocal
 from app.events.models import OutboxEventEntity
 from app.events.outbox import envelope_from_row
-from app.events.topology import EXCHANGES, declare_topology
+from app.events import types as events
+from app.events.outbox import event_source
+from app.events.topology import EXCHANGES, central_enabled, declare_topology
 from app.logging_config import setup_logging
 
 logger = logging.getLogger("warehouse.relay")
@@ -95,6 +97,34 @@ class OutboxRelay:
         self.assign_sequences()
         return self.publish_pending()
 
+    def heartbeat_payload(self) -> dict:
+        with self.session_factory() as db:
+            last_sequence = (
+                db.query(func.max(OutboxEventEntity.sequence)).filter(OutboxEventEntity.published_at.isnot(None)).scalar() or 0
+            )
+            pending = db.query(func.count(OutboxEventEntity.id)).filter(OutboxEventEntity.published_at.is_(None)).scalar()
+        return {
+            "last_sequence": last_sequence,   # la central compara esto con lo que ya recibió
+            "outbox_pending": pending,
+            "api_url": settings.ADVERTISED_API_URL or f"http://lb_warehouse_{settings.WAREHOUSE_ID}:80",
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def send_heartbeat(self) -> None:
+        """Heartbeat: "sigo viva y publiqué hasta la secuencia N"."""
+        event = build_event(events.WAREHOUSE_HEARTBEAT, event_source(), self.heartbeat_payload(), warehouse_id=settings.WAREHOUSE_ID)
+        self.publisher.publish(
+            exchange=EXCHANGES.events,
+            routing_key="warehouse.heartbeat",
+            body=encode_event(event),
+            message_id=new_event_id(),
+            message_type=events.WAREHOUSE_HEARTBEAT,
+            headers={"warehouse_id": settings.WAREHOUSE_ID},
+            expiration_ms=60_000,
+            persistent=False,
+            mandatory=False,
+        )
+
     def cleanup(self, retention_days: int) -> int:
         """Borra eventos YA publicados más viejos que retention_days (los pendientes nunca se borran)."""
         limit = datetime.now(timezone.utc) - timedelta(days=retention_days)
@@ -116,10 +146,14 @@ def main() -> None:
     logger.info("Relay iniciado", extra={"event": "relay_started"})
     backoff = 1.0
     last_cleanup = 0.0
+    last_heartbeat = 0.0
     while not stopper.stop:
         try:
             published = relay.run_once()
             backoff = 1.0
+            if central_enabled() and time.monotonic() - last_heartbeat >= settings.HEARTBEAT_SECONDS:
+                relay.send_heartbeat()
+                last_heartbeat = time.monotonic()
             if published:
                 logger.info("Eventos publicados", extra={"event": "outbox_published", "context": {"count": published}})
             if time.monotonic() - last_cleanup > 3600:

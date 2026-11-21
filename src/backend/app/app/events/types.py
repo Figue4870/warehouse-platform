@@ -7,3 +7,4 @@ INVENTORY_MOVEMENT_RECORDED = "INVENTORY_MOVEMENT_RECORDED"  # inventory.movemen
 STOCK_DEPLETED = "STOCK_DEPLETED"                            # stock.depleted   (alerta: agotado)
 STOCK_DISCREPANCY = "STOCK_DISCREPANCY"                      # stock.discrepancy (alerta: desfase)
 REPORT_REQUESTED = "REPORT_REQUESTED"                        # report.requested
+WAREHOUSE_HEARTBEAT = "WAREHOUSE_HEARTBEAT"                  # warehouse.heartbeat (Fase 7, no pasa por el outbox)

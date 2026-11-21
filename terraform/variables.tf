@@ -67,6 +67,44 @@ variable "admin_cidr" {
   default     = "0.0.0.0/0"
 }
 
+# central (Fase 7)
+variable "central_instance_type" {
+  description = "Tipo de EC2 de la plataforma central."
+  type        = string
+  default     = "t3.small"
+}
+
+variable "central_port" {
+  description = "Puerto de la API central (Swagger en /docs)."
+  type        = number
+  default     = 8090
+}
+
+variable "central_rabbit_port" {
+  description = "Puerto AMQP del RabbitMQ central: solo lo pueden usar las bodegas (security group)."
+  type        = number
+  default     = 5680
+}
+
+variable "central_rabbit_mgmt_port" {
+  description = "Consola web del RabbitMQ central (solo admin_cidr)."
+  type        = number
+  default     = 15680
+}
+
+variable "central_rabbit_password" {
+  description = "Clave del usuario 'platform' del RabbitMQ central. Cámbiala en terraform.tfvars."
+  type        = string
+  default     = "platform"
+  sensitive   = true
+
+  validation {
+    # Va dentro de una URL amqp://usuario:clave@host: caracteres como @ : / la romperían
+    condition     = can(regex("^[A-Za-z0-9_-]{8,}$", var.central_rabbit_password)) || var.central_rabbit_password == "platform"
+    error_message = "Usa al menos 8 letras, números, '_' o '-' (sin @ : / ni espacios)."
+  }
+}
+
 # bodegas
 variable "warehouses" {
   description = <<-EOT
@@ -83,6 +121,7 @@ variable "warehouses" {
   }))
   default = {
     wh_001 = { wh_id = "WH-001", api_port = 8001, web_port = 8081, rabbit_mgmt_port = 15673 }
+    # WH-002 es la bodega de alta demanda del ejercicio (800 req/s): máquina más grande, solo ella
     wh_002 = { wh_id = "WH-002", api_port = 8002, web_port = 8082, rabbit_mgmt_port = 15674, instance_type = "t3.medium" }
     wh_003 = { wh_id = "WH-003", api_port = 8003, web_port = 8083, rabbit_mgmt_port = 15675 }
   }

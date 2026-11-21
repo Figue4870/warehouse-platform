@@ -1,3 +1,4 @@
+# Infraestructura en AWS (Learner Lab): una EC2 por bodega y una para la central.
 
 data "aws_vpc" "default" {
   default = true
@@ -34,21 +35,48 @@ data "aws_ami" "ubuntu" {
 }
 
 module "security" {
-  source       = "./modules/security"
-  project_name = var.project_name
-  vpc_id       = data.aws_vpc.default.id
-  allowed_cidr = var.allowed_cidr
-  admin_cidr   = var.admin_cidr
-  warehouses   = var.warehouses
+  source                   = "./modules/security"
+  project_name             = var.project_name
+  vpc_id                   = data.aws_vpc.default.id
+  allowed_cidr             = var.allowed_cidr
+  admin_cidr               = var.admin_cidr
+  warehouses               = var.warehouses
+  central_port             = var.central_port
+  central_rabbit_port      = var.central_rabbit_port
+  central_rabbit_mgmt_port = var.central_rabbit_mgmt_port
+}
+
+# Fase 7: la plataforma central se crea PRIMERO (las bodegas necesitan su IP privada)
+module "central" {
+  source = "./modules/ec2_node"
+
+  name                  = "${var.project_name}-central"
+  node_label            = "CENTRAL"
+  component             = "central"
+  ami_id                = data.aws_ami.ubuntu.id
+  instance_type         = var.central_instance_type
+  subnet_id             = data.aws_subnets.default.ids[0]
+  security_group_ids    = [module.security.central_sg_id]
+  key_name              = var.key_name
+  instance_profile_name = var.instance_profile_name
+  root_volume_size_gb   = var.root_volume_size_gb
+  repo_url              = var.repo_url
+  repo_branch           = var.repo_branch
+  runtime_env = {
+    CENTRAL_PORT             = var.central_port
+    CENTRAL_RABBIT_PORT      = var.central_rabbit_port
+    CENTRAL_RABBIT_MGMT_PORT = var.central_rabbit_mgmt_port
+    CENTRAL_RABBIT_PASSWORD  = var.central_rabbit_password
+  }
 }
 
 module "warehouse" {
-  source   = "./modules/warehouse_node"
+  source   = "./modules/ec2_node"
   for_each = var.warehouses
 
   name                  = "${var.project_name}-${each.value.wh_id}"
-  wh_id                 = each.value.wh_id
-  wh_dir                = each.key
+  node_label            = each.value.wh_id
+  component             = each.key
   ami_id                = data.aws_ami.ubuntu.id
   instance_type         = coalesce(each.value.instance_type, var.instance_type)
   subnet_id             = data.aws_subnets.default.ids[0]
@@ -58,4 +86,9 @@ module "warehouse" {
   root_volume_size_gb   = var.root_volume_size_gb
   repo_url              = var.repo_url
   repo_branch           = var.repo_branch
+  advertise_port        = each.value.api_port
+  runtime_env = {
+    # Los eventos de la bodega viajan al RabbitMQ central por la red privada de la VPC
+    CENTRAL_AMQP_URL = "amqp://platform:${var.central_rabbit_password}@${module.central.private_ip}:${var.central_rabbit_port}/%2F"
+  }
 }

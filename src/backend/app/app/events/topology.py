@@ -24,8 +24,17 @@ QUEUES = {
 }
 
 
+CENTRAL_FORWARD = QueueSpec(name="wh.central-forward", bindings=["#"], with_retry=False)
+
+
+def central_enabled() -> bool:
+    return bool(settings.CENTRAL_AMQP_URL)
+
+
 def declare_topology(channel) -> None:
     """Idempotente: declarar algo que ya existe no lo cambia. La llaman el relay y todos los workers."""
     declare_exchanges(channel, EXCHANGES)
     for spec in QUEUES.values():
         declare_queue(channel, spec, EXCHANGES)
+    if central_enabled():
+        declare_queue(channel, CENTRAL_FORWARD, EXCHANGES)
