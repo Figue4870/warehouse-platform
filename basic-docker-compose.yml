@@ -1,10 +1,9 @@
-# Una sola bodega (WH-001): PostgreSQL + Redis + API + frontend.
+# Una sola bodega (WH-001) con todas sus piezas (Fases 1 a 5).
 #   docker compose -f basic-docker-compose.yml up -d --build
-#   API: http://localhost:8001/docs   Web: http://localhost:8081
+# Para varias bodegas usar manage.ps1 o manage_warehouse.sh.
 
-name: warehouse-basic
+name: wh-001
 
 include:
-  - path: docker/components/wh_001/compose-warehouse.yml
-    project_directory: .
+  - path: docker/composes/compose-warehouse.yml
     env_file: docker/components/wh_001/.env
