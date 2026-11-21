@@ -106,6 +106,8 @@ async function checkHealth() {
         setBadge('badge-db', `PostgreSQL ${data.database}`, data.database === 'ok' ? 'ok' : 'error');
         const redisState = data.redis === 'ok' ? 'ok' : (data.redis === 'disabled' ? 'loading' : 'error');
         setBadge('badge-redis', `Redis ${data.redis}`, redisState);
+        // Fase 5: cada recarga puede ser atendida por otra copia de la API (api-1, api-2, api-3)
+        setBadge('badge-instance', `Atendió: ${data.instance || '?'}`, 'ok');
     } catch {
         setBadge('badge-api', 'API offline', 'error');
     }

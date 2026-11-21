@@ -40,9 +40,10 @@ app = FastAPI(
     description=(
         "Fase 1: API + PostgreSQL (transacciones, inventario nunca negativo, historial).\n\n"
         "Fase 2: Redis Cache-Aside en GET /inventory/{product_id} (cabecera X-Cache: HIT/MISS/BYPASS).\n\n"
-        "Fase 3: eventos con Transactional Outbox + RabbitMQ, workers y reportes asíncronos (POST /reports -> 202)."
+        "Fase 3: eventos con Transactional Outbox + RabbitMQ, workers y reportes asíncronos (POST /reports -> 202).\n\n"
+        "Fase 5: varias instancias idénticas (stateless) detrás de un balanceador; cabecera X-Instance."
     ),
-    version="3.0.0",
+    version="5.0.0",
     lifespan=lifespan,
 )
 
@@ -57,6 +58,8 @@ async def correlation_id_middleware(request: Request, call_next):
     finally:
         reset_correlation_id(token)
     response.headers["X-Correlation-ID"] = correlation_id
+    # Fase 5: qué instancia de la API atendió (para ver el balanceo de carga)
+    response.headers["X-Instance"] = settings.INSTANCE_NAME
     return response
 
 
