@@ -70,6 +70,23 @@ class InventoryService:
             self.cache.set(product_id, data)
         return data, lookup.status
 
+    def get_stock_by_sku(self, sku: str) -> dict:
+        """Fase 7: la central consulta una bodega por SKU (el id local cambia entre bodegas)."""
+        row = self.repo.get_by_sku(sku)
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"El SKU {sku} no existe en {settings.WAREHOUSE_ID}")
+        inventory, product = row
+        return {
+            "warehouse_id": settings.WAREHOUSE_ID,
+            "sku": product.sku,
+            "product_id": product.id,
+            "is_active": product.is_active,
+            "quantity": inventory.quantity,
+            "reserved_quantity": inventory.reserved_quantity,
+            "version": inventory.version,
+            "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
+        }
+
     # POST /inventory/movements: una sola transacción (Fase 1)
     def process_movement(self, movement_in: MovementCreate) -> MovementResult:
         """Registra un movimiento en una sola transacción (todo o nada)."""

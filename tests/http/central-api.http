@@ -1,0 +1,89 @@
+### =====================================================================
+### Colección de pruebas HTTP — Plataforma CENTRAL (Fase 7)
+###
+### VS Code + extensión "REST Client": clic en "Send Request" sobre cada petición.
+### Requisito: la central y las bodegas corriendo
+###   .\manage.ps1 start all          (Linux/EC2: ./manage_warehouse.sh start all)
+### Para tener datos, crea productos y movimientos con warehouse-api.http en
+### las bodegas (8001, 8002, 8003) usando el MISMO SKU.
+### =====================================================================
+
+@central = http://localhost:8090
+@sku = DEMO-GUANTE-001
+
+### 1. Salud: base de datos y cuántas bodegas están ONLINE
+GET {{central}}/health
+
+### ---------------------------------------------------------------------
+### ESTADO DE LAS BODEGAS (heartbeats + watermark)
+### ---------------------------------------------------------------------
+
+### 2. Todas las bodegas: ONLINE/OFFLINE, eventos faltantes, última sincronización
+GET {{central}}/warehouses
+
+### 3. Una bodega
+GET {{central}}/warehouses/WH-002
+
+### ---------------------------------------------------------------------
+### INVENTARIO GLOBAL
+### ---------------------------------------------------------------------
+
+### 4. Alternativa B (recomendada): modelo de lectura. Rápida y responde aunque una bodega esté caída
+GET {{central}}/global/inventory/{{sku}}
+
+### 5. Alternativa A: pregunta EN VIVO a cada bodega (dato exacto, pero lenta e incompleta si una no responde)
+GET {{central}}/global/inventory/{{sku}}/live
+
+### 6. Todos los SKU con su total por bodega
+GET {{central}}/global/inventory?limit=50
+
+### 7. Catálogo global
+GET {{central}}/global/products
+
+### 8. Alertas de todas las bodegas (agotados, discrepancias)
+GET {{central}}/global/alerts
+
+### 9. Totales de la empresa
+GET {{central}}/global/summary
+
+### ---------------------------------------------------------------------
+### REPORTES GLOBALES (consultas sobre el modelo de lectura)
+### ---------------------------------------------------------------------
+
+### 10. Stock y valor de cada SKU en cada bodega
+GET {{central}}/reports/stock-by-warehouse
+
+### 11. Ventas por día y bodega (últimos 30 días)
+GET {{central}}/reports/sales-by-day?days=30
+
+### 12. Productos más vendidos
+GET {{central}}/reports/top-products?days=30&limit=10
+
+### 13. Movimientos por bodega y tipo
+GET {{central}}/reports/movements-by-type?days=30
+
+### ---------------------------------------------------------------------
+### SINCRONIZACIÓN (red de seguridad contra pérdida)
+### ---------------------------------------------------------------------
+
+### 14. Últimas sincronizaciones automáticas (SNAPSHOT y CATCH_UP)
+GET {{central}}/sync/runs
+
+### 15. Forzar ya un catch-up (pedir a la bodega los eventos que falten)
+POST {{central}}/sync/warehouses/WH-001/catch-up
+
+### 16. Forzar una resincronización total (snapshot)
+POST {{central}}/sync/warehouses/WH-001/snapshot
+
+### ---------------------------------------------------------------------
+### LO QUE LA BODEGA OFRECE A LA CENTRAL (endpoints /sync de cada bodega)
+### ---------------------------------------------------------------------
+
+### 17. Eventos de WH-001 después de la secuencia 0 (lo que usa el catch-up)
+GET http://localhost:8001/sync/events?after_sequence=0&limit=20
+
+### 18. Foto completa de WH-001 (lo que usa el snapshot)
+GET http://localhost:8001/sync/snapshot
+
+### 19. Saldo por SKU, en vivo (lo que usa la alternativa A)
+GET http://localhost:8001/inventory/by-sku/{{sku}}

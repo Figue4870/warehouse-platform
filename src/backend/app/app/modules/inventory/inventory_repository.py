@@ -34,6 +34,15 @@ class InventoryRepository:
             .first()
         )
 
+    def get_by_sku(self, sku: str) -> Optional[Tuple[InventoryEntity, ProductEntity]]:
+        row = (
+            self.db.query(InventoryEntity, ProductEntity)
+            .join(ProductEntity, ProductEntity.id == InventoryEntity.product_id)
+            .filter(ProductEntity.sku == sku, InventoryEntity.warehouse_id == settings.WAREHOUSE_ID)
+            .first()
+        )
+        return (row[0], row[1]) if row else None
+
     def get_by_product_for_update(self, product_id: int) -> Optional[Tuple[InventoryEntity, ProductEntity]]:
         """Lee el saldo con bloqueo de fila (SELECT ... FOR UPDATE)."""
         row = (

@@ -2,7 +2,8 @@
 =====================================================================
  Gestión de bodegas en Windows (PowerShell). Mismos comandos que manage_warehouse.sh
 
-   .\manage.ps1 start wh_001         -> levanta una bodega (o "all")
+   .\manage.ps1 start central        -> levanta la plataforma central (Fase 7)
+   .\manage.ps1 start wh_001         -> levanta una bodega ("all" = central + todas)
    .\manage.ps1 stop wh_002          -> la apaga SIN borrar datos (o "all")
    .\manage.ps1 restart wh_001
    .\manage.ps1 reset wh_001         -> la apaga y BORRA sus datos (volúmenes)
@@ -23,6 +24,14 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 $WarehouseCompose = "docker/composes/compose-warehouse.yml"
+$CentralCompose = "docker/composes/compose-central.yml"
+$PlatformNetwork = "warehouse_platform"
+
+function Initialize-Network {
+    # Red compartida entre la central y las bodegas (Fase 7)
+    docker network inspect $PlatformNetwork *> $null
+    if ($LASTEXITCODE -ne 0) { docker network create $PlatformNetwork | Out-Null }
+}
 
 function Get-Warehouses {
     Get-ChildItem -Path "docker/components" -Directory -Filter "wh_*" | Sort-Object Name | ForEach-Object { $_.Name }
@@ -34,7 +43,11 @@ function Invoke-WarehouseCompose([string]$Warehouse, [string[]]$ComposeArgs) {
     $dockerArgs = @("compose", "--env-file", $envFile)
     $runtimeEnv = "docker/components/$Warehouse/runtime.env"
     if (Test-Path $runtimeEnv) { $dockerArgs += @("--env-file", $runtimeEnv) }
-    $dockerArgs += @("-f", $WarehouseCompose, "-p", ($Warehouse -replace "_", "-"))
+    if ($Warehouse -eq "central") {
+        $dockerArgs += @("-f", $CentralCompose, "-p", "central")
+    } else {
+        $dockerArgs += @("-f", $WarehouseCompose, "-p", ($Warehouse -replace "_", "-"))
+    }
     $dockerArgs += $ComposeArgs
     & docker @dockerArgs
     if ($LASTEXITCODE -ne 0) { throw "docker compose falló para $Warehouse" }
@@ -42,7 +55,7 @@ function Invoke-WarehouseCompose([string]$Warehouse, [string[]]$ComposeArgs) {
 
 function Invoke-ForTargets([string[]]$ComposeArgs, [string]$Message) {
     if (-not $Target) { throw "Indica la bodega (ej: wh_001) o 'all'" }
-    $targets = if ($Target -eq "all") { Get-Warehouses } else { @($Target) }
+    $targets = if ($Target -eq "all") { @("central") + @(Get-Warehouses) } else { @($Target) }
     foreach ($wh in $targets) {
         Write-Host "==> $Message $wh" -ForegroundColor Cyan
         Invoke-WarehouseCompose $wh $ComposeArgs
@@ -50,7 +63,7 @@ function Invoke-ForTargets([string[]]$ComposeArgs, [string]$Message) {
 }
 
 switch ($Action) {
-    "start"   { Invoke-ForTargets @("up", "-d", "--build") "Iniciando" }
+    "start"   { Initialize-Network; Invoke-ForTargets @("up", "-d", "--build") "Iniciando" }
     "stop"    { Invoke-ForTargets @("stop") "Apagando" }
     "restart" { Invoke-ForTargets @("restart") "Reiniciando" }
     "reset"   { Invoke-ForTargets @("down", "-v") "Borrando (con datos)" }
@@ -61,6 +74,6 @@ switch ($Action) {
         if ($Service) { $logArgs += $Service }
         Invoke-WarehouseCompose $Target $logArgs
     }
-    "list"    { Get-Warehouses }
-    default   { Get-Content $PSCommandPath -TotalCount 17 | Select-Object -Skip 2 }
+    "list"    { "central"; Get-Warehouses }
+    default   { Get-Content $PSCommandPath -TotalCount 18 | Select-Object -Skip 2 }
 }

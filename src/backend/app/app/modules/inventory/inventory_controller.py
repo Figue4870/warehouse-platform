@@ -11,6 +11,12 @@ from app.modules.inventory.schemas import InventoryResponse, MovementCreate, Mov
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
 
+@router.get("/by-sku/{sku}", summary="Saldo por SKU, leído en vivo de PostgreSQL (Fase 7: lo usa la consulta 'live' de la central)")
+def get_inventory_by_sku(sku: str, db: Session = Depends(get_db),
+                         cache: InventoryCache = Depends(get_inventory_cache)):
+    return InventoryService(db, cache).get_stock_by_sku(sku)
+
+
 @router.get("/{product_id}", response_model=InventoryResponse,
             summary="Consultar saldo de un producto (usa caché Redis)")
 def get_inventory(product_id: int, response: Response, db: Session = Depends(get_db),

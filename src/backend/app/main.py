@@ -15,6 +15,7 @@ from app.modules.health.health_controller import router as health_controller
 from app.modules.inventory.inventory_controller import router as inventory_controller
 from app.modules.products.products_controller import router as products_controller
 from app.modules.reports.reports_controller import router as reports_controller
+from app.modules.sync.sync_controller import router as sync_controller
 
 logger = logging.getLogger("warehouse.api")
 
@@ -41,9 +42,10 @@ app = FastAPI(
         "Fase 1: API + PostgreSQL (transacciones, inventario nunca negativo, historial).\n\n"
         "Fase 2: Redis Cache-Aside en GET /inventory/{product_id} (cabecera X-Cache: HIT/MISS/BYPASS).\n\n"
         "Fase 3: eventos con Transactional Outbox + RabbitMQ, workers y reportes asíncronos (POST /reports -> 202).\n\n"
-        "Fase 5: varias instancias idénticas (stateless) detrás de un balanceador; cabecera X-Instance."
+        "Fase 5: varias instancias idénticas (stateless) detrás de un balanceador; cabecera X-Instance.\n\n"
+        "Fase 7: los eventos se reenvían a la central; /sync permite a la central recuperar huecos."
     ),
-    version="5.0.0",
+    version="7.0.0",
     lifespan=lifespan,
 )
 
@@ -82,3 +84,4 @@ app.include_router(products_controller)
 app.include_router(inventory_controller)
 app.include_router(alerts_controller)
 app.include_router(reports_controller)
+app.include_router(sync_controller)

@@ -1,3 +1,8 @@
+# Plantilla de una bodega (Fases 1 a 7). Cada bodega usa su propio .env y proyecto:
+#   docker compose --env-file docker/components/wh_002/.env -f docker/composes/compose-warehouse.yml -p wh-002 up -d --build
+# Necesita la red externa warehouse_platform (los scripts la crean).
+
+# Configuración común de la API y los workers (misma imagen, distinto comando)
 x-backend: &backend
   build:
     context: ../../src
@@ -12,8 +17,13 @@ x-backend: &backend
     CACHE_INVALIDATION_MODE: ${CACHE_INVALIDATION_MODE:-both}
     AMQP_URL: amqp://${RABBIT_USER:-warehouse}:${RABBIT_PASSWORD:-warehouse}@rabbitmq:5672/%2F
     REPORT_SIMULATED_DELAY_SECONDS: ${REPORT_SIMULATED_DELAY_SECONDS:-0}
+    # Fase 7: RabbitMQ de la central y URL con la que la central llama a esta bodega
+    CENTRAL_AMQP_URL: ${CENTRAL_AMQP_URL:-amqp://platform:platform@central_rabbitmq:5672/%2F}
+    ADVERTISED_API_URL: ${ADVERTISED_API_URL:-}
+    HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-15}
   restart: unless-stopped
 
+# Las 3 instancias de la API son idénticas (stateless): solo cambia su nombre
 x-api: &api
   <<: *backend
   depends_on:
@@ -120,6 +130,8 @@ services:
       - "${BE_PORT}:80"                    # la API de la bodega se publica a través del balanceador
     volumes:
       - ../nginx/lb.conf:/etc/nginx/conf.d/default.conf:ro
+    # En "platform" la central lo encuentra como http://lb_warehouse_<WH_ID>:80
+    networks: [default, platform]
     depends_on:
       - api_1
       - api_2
@@ -162,6 +174,14 @@ services:
     command: ["python", "-m", "app.workers.audit_worker"]
     depends_on: *worker-deps
 
+  # Fase 7: puente hacia la central
+  central_forwarder:
+    <<: *backend
+    container_name: central_forwarder_${WH_ID}
+    command: ["python", "-m", "app.workers.central_forwarder"]
+    networks: [default, platform]
+    depends_on: *worker-deps
+
   frontend:
     build:
       context: ../../src/frontend/app
@@ -175,6 +195,11 @@ services:
     depends_on:
       - lb
     restart: unless-stopped
+
+networks:
+  platform:
+    name: warehouse_platform
+    external: true
 
 volumes:
   pgdata:
