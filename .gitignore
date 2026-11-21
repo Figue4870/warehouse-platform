@@ -17,3 +17,4 @@ terraform.tfvars
 .terraform.lock.hcl.bak
 # Resultados de pruebas de carga
 *.results.json
+docker/components/*/runtime.env

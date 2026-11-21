@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -euxo pipefail
+exec > >(tee -a /var/log/warehouse-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y docker.io docker-compose-v2 git
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+APP_DIR=/opt/warehouse-platform
+if [ ! -d "$APP_DIR/.git" ]; then
+  git clone --branch "${repo_branch}" "${repo_url}" "$APP_DIR"
+fi
+cd "$APP_DIR"
+
+cat > docker/components/${wh_dir}/runtime.env <<'RUNTIME_ENV'
+%{ for key, value in runtime_env ~}
+${key}=${value}
+%{ endfor ~}
+RUNTIME_ENV
+
+chown -R ubuntu:ubuntu "$APP_DIR"
+bash manage_warehouse.sh start ${wh_dir}
+echo "Bodega ${wh_id} lista"

@@ -1,3 +1,5 @@
+import socket
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,7 +9,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Fase 1: identidad de la bodega + PostgreSQL
-    WAREHOUSE_ID: str = "WH-001"  # Identificador de esta bodega autónoma
+    WAREHOUSE_ID: str = "WH-001"
+    INSTANCE_NAME: str = socket.gethostname()
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/warehouse_db"
     # True  -> la API crea las tablas al arrancar (útil corriendo sin Docker).
     # False -> las tablas las crea db/schema.sql (así está en Docker).

@@ -46,7 +46,7 @@ def main():
             client.get(f"/inventory/{pid}")
         client.post("/metrics/reset")
 
-    latencies, statuses, cache_headers = [], Counter(), Counter()
+    latencies, statuses, cache_headers, instances = [], Counter(), Counter(), Counter()
     lock = threading.Lock()
     local = threading.local()
 
@@ -57,13 +57,15 @@ def main():
         try:
             response = local.client.get(f"/inventory/{pid}")
             code, header = response.status_code, response.headers.get("X-Cache", "-")
+            instance = response.headers.get("X-Instance", "-")
         except httpx.HTTPError:
-            code, header = "error", "-"
+            code, header, instance = "error", "-", "-"
         elapsed_ms = (time.perf_counter() - start) * 1000
         with lock:
             latencies.append(elapsed_ms)
             statuses[code] += 1
             cache_headers[header] += 1
+            instances[instance] += 1
 
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
@@ -88,9 +90,12 @@ def main():
         "p99_ms": round(percentile(latencies, 99), 2),
         "errors": errors,
         "error_rate_pct": round(100 * errors / args.requests, 2),
+        # Ojo con varias instancias: este contador es SOLO de la instancia que respondió /metrics
         "sql_queries_in_api": metrics["sql_queries_total"],
         "cache_hit_ratio": cache["hit_ratio"],
         "x_cache_headers": dict(cache_headers),
+        # Fase 5: cuántas peticiones atendió cada instancia de la API (balanceo)
+        "por_instancia": dict(instances),
     }
 
     print("\n=== Resultado del benchmark ===")

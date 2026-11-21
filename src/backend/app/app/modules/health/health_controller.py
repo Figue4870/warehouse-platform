@@ -1,5 +1,3 @@
-import socket
-
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -34,6 +32,7 @@ def health_check(response: Response, db: Session = Depends(get_db),
     return {
         "status": "ok" if healthy else "error",
         "warehouse_id": settings.WAREHOUSE_ID,
+        "instance": settings.INSTANCE_NAME,  # Fase 5: qué copia de la API respondió
         "database": database,
         "redis": redis_status,
         # Fase 3: eventos aún no entregados a RabbitMQ (si crece, RabbitMQ o el relay están caídos)
@@ -60,7 +59,7 @@ def outbox_stats(db: Session) -> dict:
 def metrics(cache: InventoryCache = Depends(get_inventory_cache), db: Session = Depends(get_db)):
     return {
         "warehouse_id": settings.WAREHOUSE_ID,
-        "instance": socket.gethostname(),
+        "instance": settings.INSTANCE_NAME,
         # Consultas SQL que ha ejecutado ESTE proceso desde el arranque/reset
         "sql_queries_total": sql_query_counter.value,
         "cache": cache.stats(),
