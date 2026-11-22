@@ -46,6 +46,12 @@ module "security" {
   central_rabbit_mgmt_port = var.central_rabbit_mgmt_port
 }
 
+module "analytics" {
+  count   = var.enable_analytics ? 1 : 0
+  source  = "./modules/analytics"
+  sql_dir = "${path.root}/../src/central/central/analytics/sql"
+}
+
 # Fase 7: la plataforma central se crea PRIMERO (las bodegas necesitan su IP privada)
 module "central" {
   source = "./modules/ec2_node"
@@ -62,12 +68,13 @@ module "central" {
   root_volume_size_gb   = var.root_volume_size_gb
   repo_url              = var.repo_url
   repo_branch           = var.repo_branch
-  runtime_env = {
+  runtime_env = merge({
+    AWS_DEFAULT_REGION       = var.aws_region
     CENTRAL_PORT             = var.central_port
     CENTRAL_RABBIT_PORT      = var.central_rabbit_port
     CENTRAL_RABBIT_MGMT_PORT = var.central_rabbit_mgmt_port
     CENTRAL_RABBIT_PASSWORD  = var.central_rabbit_password
-  }
+  }, var.enable_analytics ? module.analytics[0].runtime_env : {})
 }
 
 module "warehouse" {

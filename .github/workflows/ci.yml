@@ -57,12 +57,15 @@ jobs:
         run: docker compose --env-file docker/components/central/.env -f docker/composes/compose-central.yml -p central up -d --build --wait --wait-timeout 300
       - name: Construir y levantar WH-001 (espera a que todo esté healthy)
         run: docker compose -f basic-docker-compose.yml up -d --build --wait --wait-timeout 300
+      - name: Levantar WH-002
+        run: docker compose --env-file docker/components/wh_002/.env -f docker/composes/compose-warehouse.yml -p wh-002 up -d --build --wait --wait-timeout 300
       - name: Pruebas de integración (bodega + central)
         run: pytest tests/integration -q
         env:
           API_URL: http://localhost:8001
           REDIS_URL: redis://localhost:6380/0
           CENTRAL_URL: http://localhost:8090
+          SECOND_WAREHOUSE_URL: http://localhost:8002
       - name: Logs si algo falló
         if: failure()
         run: |
@@ -71,5 +74,6 @@ jobs:
       - name: Apagar
         if: always()
         run: |
+          docker compose --env-file docker/components/wh_002/.env -f docker/composes/compose-warehouse.yml -p wh-002 down -v
           docker compose -f basic-docker-compose.yml down -v
           docker compose --env-file docker/components/central/.env -f docker/composes/compose-central.yml -p central down -v

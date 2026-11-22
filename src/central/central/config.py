@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # Opcional: "WH-001=http://10.0.1.10:8001,WH-002=..." (si no, se aprenden de los heartbeats)
     WAREHOUSE_API_URLS: str = ""
 
+    SAGA_ALLOW_SIMULATION: bool = False
+    EXPORT_DIRECTORY: str = "/app/exports"
+    EXPORT_S3_BUCKET: str = ""
+    ATHENA_DATABASE: str = ""
+    ATHENA_WORKGROUP: str = ""
+
     WORKER_MAX_RETRIES: int = 5
     WORKER_RETRY_DELAY_MS: int = 5000
 

@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 from platform_common.correlation import new_correlation_id, reset_correlation_id, set_correlation_id
 
 from app.config import settings
+from app.modules.inventory.transfer_operations import router as transfer_operations_router
 from app.database import Base, engine
 from app.logging_config import setup_logging
 from app.modules.alerts.alerts_controller import router as alerts_controller
@@ -79,6 +80,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
 
 
+app.include_router(transfer_operations_router)
 app.include_router(health_controller)
 app.include_router(products_controller)
 app.include_router(inventory_controller)
