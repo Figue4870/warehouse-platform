@@ -10,7 +10,7 @@ from central import models  # noqa: F401 - registra las tablas
 from central.config import settings
 from central.database import Base, engine
 from central.logging_config import setup_logging
-from central.routers import dashboard, global_inventory, health, reports, sync, warehouses
+from central.routers import athena, dashboard, global_inventory, health, reports, sync, transfers, warehouses
 
 logger = logging.getLogger("central.api")
 
@@ -67,3 +67,5 @@ app.include_router(global_inventory.router)
 app.include_router(sync.router)
 app.include_router(reports.router)
 app.include_router(dashboard.router)
+app.include_router(athena.router)
+app.include_router(transfers.router)

@@ -24,7 +24,8 @@ resource "aws_instance" "this" {
   }
 
   metadata_options {
-    http_tokens = "required" # IMDSv2 (más seguro)
+    http_tokens                 = "required"
+    http_put_response_hop_limit = var.component == "central" ? 2 : 1
   }
 
   tags = {

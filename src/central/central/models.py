@@ -100,6 +100,8 @@ class MovementHistoryEntity(Base):
     occurred_at = Column(DateTime(timezone=True), nullable=False)
     projected_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
+    exported_at = Column(DateTime(timezone=True))
+
 
 class CentralAlertEntity(Base):
     __tablename__ = "central_alerts"

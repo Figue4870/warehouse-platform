@@ -80,6 +80,29 @@
 
 </div>
 
+<section>
+  <h2>Transferencias</h2>
+  <form id="new-transfer">
+    <input name="sku" placeholder="SKU" required>
+    <input name="source_warehouse_id" placeholder="Origen" required>
+    <input name="destination_warehouse_id" placeholder="Destino" required>
+    <input name="quantity" type="number" min="1" placeholder="Cantidad" required>
+    <input name="timeout_seconds" type="number" min="5" max="3600" value="60" aria-label="Plazo por paso en segundos">
+    <select name="simulate_failure" aria-label="Simular fallo">
+      <option value="">Sin simulación</option>
+      <option value="SOURCE_REJECTS">Origen rechaza</option>
+      <option value="DESTINATION_REJECTS">Destino rechaza</option>
+    </select>
+    <button>Solicitar</button>
+  </form>
+  <button id="refresh-transfers">Actualizar transferencias</button>
+  <select id="transfer-list" aria-label="Transferencia"></select>
+  <pre id="transfer-detail" aria-live="polite"></pre>
+  <h2>Reportes con Athena</h2>
+  <select id="athena-list" aria-label="Reporte Athena"></select>
+  <button id="athena-run" disabled>Ejecutar</button>
+  <pre id="athena-result" aria-live="polite"></pre>
+</section>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -133,6 +156,70 @@ async function refresh() {
   await loadHealth();
   await Promise.allSettled([loadWarehouses(), loadInventory()]);
 }
+async function showTransfer() {
+  const id = $("transfer-list").value;
+  if (!id) return;
+  const result = await api("/transfers/" + encodeURIComponent(id));
+  $("transfer-detail").textContent = result.state + "\n" + result.history.map(
+    (event) => [event.occurred_at, event.state, event.note].filter(Boolean).join(" · ")
+  ).join("\n");
+}
+
+async function refreshTransfers() {
+  const list = $("transfer-list");
+  const selected = list.value;
+  list.replaceChildren(...(await api("/transfers")).map(
+    (row) => new Option(row.transfer_id + " · " + row.state, row.transfer_id)
+  ));
+  if ([...list.options].some((option) => option.value === selected)) list.value = selected;
+  await showTransfer();
+}
+
+$("refresh-transfers").onclick = () => refreshTransfers().catch((error) => {
+  $("transfer-detail").textContent = error.message;
+});
+$("transfer-list").onchange = () => showTransfer().catch((error) => {
+  $("transfer-detail").textContent = error.message;
+});
+$("new-transfer").onsubmit = async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  data.quantity = Number(data.quantity);
+  data.timeout_seconds = Number(data.timeout_seconds);
+  if (!data.simulate_failure) delete data.simulate_failure;
+  try {
+    await api("/transfers", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)});
+    await refreshTransfers();
+  } catch (error) {
+    $("transfer-detail").textContent = error.message;
+  }
+};
+api("/reports/athena").then((data) => {
+  $("athena-list").replaceChildren(...Object.entries(data.reports).map(([id, label]) => new Option(label, id)));
+  $("athena-run").disabled = !data.configured;
+  if (!data.configured) $("athena-result").textContent = "Athena no está configurado";
+}).catch((error) => { $("athena-result").textContent = error.message; });
+
+$("athena-run").onclick = async () => {
+  $("athena-run").disabled = true;
+  try {
+    const run = await api("/reports/athena/" + encodeURIComponent($("athena-list").value), {method: "POST"});
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const result = await api("/reports/athena/executions/" + encodeURIComponent(run.execution_id));
+      $("athena-result").textContent = result.rows
+        ? [result.columns, ...result.rows].map((row) => row.join(" · ")).join("\n")
+        : [result.status, result.reason].filter(Boolean).join(" · ");
+      if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(result.status)) return;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    $("athena-result").textContent = "Se agotó el plazo de consulta del resultado";
+  } catch (error) {
+    $("athena-result").textContent = error.message;
+  } finally {
+    $("athena-run").disabled = false;
+  }
+};
+refreshTransfers().catch((error) => { $("transfer-detail").textContent = error.message; });
 refresh();
 setInterval(() => { if ($("auto").checked) refresh(); }, 5000);
 </script>

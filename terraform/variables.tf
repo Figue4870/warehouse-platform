@@ -126,3 +126,8 @@ variable "warehouses" {
     wh_003 = { wh_id = "WH-003", api_port = 8003, web_port = 8083, rabbit_mgmt_port = 15675 }
   }
 }
+
+variable "enable_analytics" {
+  type    = bool
+  default = true
+}

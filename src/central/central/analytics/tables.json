@@ -1,0 +1,43 @@
+{
+  "movements": {
+    "event_id": "string",
+    "warehouse_id": "string",
+    "sku": "string",
+    "product_name": "string",
+    "category": "string",
+    "type": "string",
+    "unit_retail_price": "string",
+    "unit_supplier_cost": "string",
+    "lot": "string",
+    "reference": "string",
+    "occurred_at": "string",
+    "sequence": "bigint",
+    "movement_id": "bigint",
+    "quantity": "bigint",
+    "quantity_after": "bigint",
+    "reserved_after": "bigint"
+  },
+  "inventory": {
+    "snapshot_at": "string",
+    "warehouse_id": "string",
+    "sku": "string",
+    "product_name": "string",
+    "category": "string",
+    "unit_supplier_cost": "string",
+    "unit_retail_price": "string",
+    "quantity": "bigint",
+    "reserved_quantity": "bigint",
+    "version": "bigint"
+  },
+  "transfers": {
+    "transfer_id": "string",
+    "sku": "string",
+    "source": "string",
+    "destination": "string",
+    "state": "string",
+    "created_at": "string",
+    "finished_at": "string",
+    "quantity": "bigint",
+    "duration_seconds": "double"
+  }
+}
