@@ -1,5 +1,5 @@
-# Plataforma central (Fase 7): postgres, rabbitmq, api, projector y reconciler.
-# Usa la red warehouse_platform, compartida con las bodegas.
+# Plataforma central (Fases 6 y 7): postgres, rabbitmq, api, projector, reconciler,
+# saga, command_relay y exporter. Usa la red warehouse_platform.
 
 x-central: &central
   build:
@@ -12,6 +12,17 @@ x-central: &central
     ONLINE_AFTER_SECONDS: ${ONLINE_AFTER_SECONDS:-45}
     # Opcional: "WH-001=http://...,WH-002=..." (normalmente se aprenden de los heartbeats)
     WAREHOUSE_API_URLS: ${WAREHOUSE_API_URLS:-}
+    # Fase 6: Saga
+    SAGA_STEP_TIMEOUT_SECONDS: ${SAGA_STEP_TIMEOUT_SECONDS:-60}
+    SAGA_ALLOW_SIMULATION: ${SAGA_ALLOW_SIMULATION:-true}
+    # Reportes con Athena (en AWS los escribe Terraform en runtime.env; vacíos = solo local)
+    EXPORT_S3_BUCKET: ${EXPORT_S3_BUCKET:-}
+    EXPORT_DIR: /app/exports
+    EXPORT_INTERVAL_SECONDS: ${EXPORT_INTERVAL_SECONDS:-60}
+    EXPORT_SNAPSHOT_SECONDS: ${EXPORT_SNAPSHOT_SECONDS:-3600}
+    ATHENA_DATABASE: ${ATHENA_DATABASE:-warehouse_analytics}
+    ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
   networks: [default, platform]
   restart: unless-stopped
 
@@ -87,6 +98,38 @@ services:
     <<: *central
     container_name: central_reconciler
     command: ["python", "-m", "central.workers.reconciler"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+
+  # Fase 6: Saga de transferencias
+  central_saga:
+    <<: *central
+    container_name: central_saga
+    command: ["python", "-m", "central.workers.saga"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+      central_rabbitmq:
+        condition: service_healthy
+
+  central_command_relay:
+    <<: *central
+    container_name: central_command_relay
+    command: ["python", "-m", "central.workers.command_relay"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+      central_rabbitmq:
+        condition: service_healthy
+
+  # Reportes con Athena
+  central_exporter:
+    <<: *central
+    container_name: central_exporter
+    command: ["python", "-m", "central.workers.exporter"]
+    volumes:
+      - ../../exports:/app/exports         # sin AWS: los archivos quedan en la carpeta exports/ del repositorio
     depends_on:
       central_postgres:
         condition: service_healthy

@@ -13,3 +13,6 @@ repo_branch = "main"
 # Fase 7: plataforma central
 # central_instance_type   = "t3.small"
 central_rabbit_password = "cambia-esta-clave"   # mínimo 8: letras, números, _ o -
+
+# Reportes con Athena (S3 + Glue + Athena). false = solo las máquinas
+# enable_analytics = true

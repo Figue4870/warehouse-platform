@@ -26,6 +26,23 @@ class Settings(BaseSettings):
     WORKER_MAX_RETRIES: int = 5
     WORKER_RETRY_DELAY_MS: int = 5000
 
+    # Fase 6: Saga de transferencias
+    SAGA_STEP_TIMEOUT_SECONDS: int = 60   # cuánto puede tardar una bodega en reservar / recibir
+    SAGA_GRACE_SECONDS: int = 5           # margen extra antes de compensar (relojes, red)
+    SAGA_TICK_SECONDS: float = 1.0        # cada cuánto el relay de comandos publica y revisa vencimientos
+    SAGA_ALLOW_SIMULATION: bool = True    # permitir "simulate_failure" en POST /transfers (experimentos de la guía)
+
+    # Reportes con Athena (exportación a S3)
+    EXPORT_S3_BUCKET: str = ""            # vacío = se exporta a la carpeta EXPORT_DIR (desarrollo local)
+    EXPORT_DIR: str = "exports"
+    EXPORT_INTERVAL_SECONDS: int = 60
+    EXPORT_BATCH_SIZE: int = 5000
+    EXPORT_SNAPSHOT_SECONDS: int = 3600   # foto del inventario (tabla inventory de Athena)
+    ATHENA_DATABASE: str = "warehouse_analytics"
+    ATHENA_WORKGROUP: str = ""            # vacío = Athena no configurado (solo en AWS)
+    ATHENA_MAX_ROWS: int = 1000
+    AWS_DEFAULT_REGION: str = "us-east-1"
+
 
 settings = Settings()
 

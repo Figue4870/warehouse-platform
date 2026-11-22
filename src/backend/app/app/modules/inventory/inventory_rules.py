@@ -10,10 +10,17 @@ DECREASES_AVAILABLE = {MovementType.SHIPMENT, MovementType.TRANSFER_OUT}
 
 
 def calculate_new_balance(
-    movement_type: MovementType, quantity: int, available: int, reserved: int
+    movement_type: MovementType, quantity: int, available: int, reserved: int, from_reservation: bool = False
 ) -> Tuple[int, int]:
     """Calcula el nuevo saldo (disponible, reservado) después de un movimiento."""
     movement_type = MovementType(movement_type)
+
+    if from_reservation:
+        if movement_type != MovementType.TRANSFER_OUT:
+            raise BusinessRuleError("Solo una salida por transferencia puede tomar unidades de la reserva")
+        if quantity > reserved:
+            raise BusinessRuleError(f"La reserva no alcanza. Reservado: {reserved}, requerido: {quantity}")
+        return available, reserved - quantity
 
     if movement_type in INCREASES_AVAILABLE:
         return available + quantity, reserved

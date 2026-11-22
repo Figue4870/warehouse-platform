@@ -105,6 +105,13 @@ variable "central_rabbit_password" {
   }
 }
 
+# reportes con Athena
+variable "enable_analytics" {
+  description = "Crear S3 + Glue + Athena para los reportes (false = solo EC2)."
+  type        = bool
+  default     = true
+}
+
 # bodegas
 variable "warehouses" {
   description = <<-EOT

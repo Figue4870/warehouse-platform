@@ -28,3 +28,8 @@ def test_las_unidades_reservadas_no_se_pueden_vender():
 
 def test_reserva_pasa_de_disponible_a_reservado():
     assert calculate_new_balance(T.RESERVATION, 4, available=10, reserved=1) == (6, 5)
+
+
+def test_salida_por_transferencia_toma_de_la_reserva():
+    # Fase 6: la Saga primero reservó 30; al confirmar el destino, salen de lo reservado
+    assert calculate_new_balance(T.TRANSFER_OUT, 30, available=70, reserved=30, from_reservation=True) == (70, 0)

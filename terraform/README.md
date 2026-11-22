@@ -1,12 +1,15 @@
 # Terraform: despliegue en AWS (Learner Lab)
 
-Crea una EC2 por bodega y una para la plataforma central, con sus security groups. Cada máquina
-instala Docker, clona el repositorio y levanta lo suyo con `./manage_warehouse.sh start ...`.
+Crea una EC2 por bodega, una para la plataforma central y los recursos de los reportes con Athena.
+Cada máquina instala Docker, clona el repositorio y levanta lo suyo con `./manage_warehouse.sh start ...`.
 
 - La central se crea primero: cada bodega recibe su IP privada en `runtime.env`
   (`CENTRAL_AMQP_URL`) y los eventos viajan por la red privada de la VPC.
 - Security group de la central: API (8090) abierta; AMQP (5680) solo desde las bodegas; SSH y
   consola de RabbitMQ solo desde `admin_cidr`.
+- `module.analytics` (si `enable_analytics = true`): bucket S3, base y tablas de Glue, workgroup de
+  Athena y las 5 consultas guardadas (ver `docs/fases/REPORTES_ATHENA.md`). Los contenedores de la
+  central usan las credenciales de LabRole (IMDSv2 con `http_put_response_hop_limit = 2`).
 - Usa la VPC por defecto, la llave `vockey` y el perfil `LabInstanceProfile` (el Learner Lab no deja
   crear roles IAM).
 
@@ -24,7 +27,7 @@ cd terraform
 terraform init
 terraform plan
 terraform apply      # escribir "yes"
-terraform output     # URLs de cada bodega y de la central
+terraform output     # URLs de cada bodega, de la central y datos de Athena
 ```
 
 6. Esperar unos 5 minutos. Ver el avance:
@@ -38,5 +41,6 @@ terraform output     # URLs de cada bodega y de la central
   `python scripts/new_warehouse.py WH-004`).
 - Una sola bodega más grande: `instance_type` dentro de esa bodega en `warehouses`.
 - Clave del RabbitMQ central: `central_rabbit_password = "..."`.
+- Sin Athena: `enable_analytics = false`.
 - Volver a desplegar el código de una bodega:
   `terraform apply -replace='module.warehouse["wh_001"].aws_instance.this'`.

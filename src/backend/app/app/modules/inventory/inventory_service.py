@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass, field
 from typing import List, Tuple
 
 from fastapi import HTTPException, status
@@ -13,7 +14,8 @@ from app.events.payloads import alert_payload, movement_payload
 from app.modules.alerts.alerts_service import DISCREPANCY, OUT_OF_STOCK, AlertService
 from app.modules.inventory.inventory_repository import InventoryRepository
 from app.modules.inventory.inventory_rules import calculate_new_balance
-from app.modules.inventory.models import InventoryEntity
+from app.modules.inventory.models import InventoryEntity, InventoryMovementEntity
+from app.modules.products.models import ProductEntity
 from app.modules.inventory.schemas import (
     InventoryResponse,
     MovementCreate,
@@ -24,6 +26,17 @@ from app.modules.inventory.schemas import (
 from app.modules.shared.errors import BusinessRuleError
 
 logger = logging.getLogger("warehouse.inventory")
+
+# Fase 6: solo la Saga (command-worker) puede registrar estos tipos
+TRANSFER_TYPES = {MovementType.TRANSFER_IN, MovementType.TRANSFER_OUT}
+
+
+@dataclass
+class AppliedMovement:
+    movement: InventoryMovementEntity
+    product: ProductEntity
+    inventory: InventoryEntity
+    alerts_generated: List[str] = field(default_factory=list)
 
 
 class InventoryService:
@@ -87,70 +100,97 @@ class InventoryService:
             "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
         }
 
+    # Núcleo de un movimiento, sin commit (lo usan la API y la Saga)
+    def apply_movement(
+        self,
+        product_id: int,
+        m_type: MovementType,
+        quantity: int,
+        lot: str | None = None,
+        reference: str | None = None,
+        from_reservation: bool = False,
+    ) -> AppliedMovement:
+        """Aplica un movimiento sin hacer commit (lo usan la API y el command-worker)."""
+        m_type = MovementType(m_type)
+        alerts_generated: List[str] = []
+
+        # 1. Leer el saldo actual bloqueando la fila
+        row = self.repo.get_by_product_for_update(product_id)
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No existe inventario para el producto {product_id} en la bodega {settings.WAREHOUSE_ID}",
+            )
+        inventory, product = row
+        if not product.is_active:
+            raise BusinessRuleError("El producto está dado de baja; no admite movimientos")
+
+        before_qty = inventory.quantity
+        before_reserved = inventory.reserved_quantity
+
+        # 2. Aplicar la regla de negocio (lanza BusinessRuleError si quedaría negativo)
+        new_qty, new_reserved = calculate_new_balance(
+            m_type, quantity, before_qty, before_reserved, from_reservation=from_reservation
+        )
+
+        # 3. Guardar nuevo saldo + historial
+        self.repo.update_stock(inventory, new_qty, new_reserved)
+        movement = self.repo.register_movement(
+            product_id=product_id,
+            m_type=m_type.value,
+            qty=quantity,
+            quantity_after=new_qty,
+            reserved_after=new_reserved,
+            lot=lot,
+            ref=reference,
+        )
+
+        # 4. Evento del movimiento para RabbitMQ (Fase 3) — misma transacción
+        self.outbox.add(events.INVENTORY_MOVEMENT_RECORDED, "inventory", product.sku,
+                        movement_payload(movement, product, inventory))
+
+        # 5. Logs automáticos que pide el PDF (misma transacción) + su evento
+        if before_qty > 0 and new_qty == 0:
+            alert = self.alerts.register(
+                product_id,
+                OUT_OF_STOCK,
+                f"Producto {product_id} agotado en {settings.WAREHOUSE_ID} tras {m_type.value} "
+                f"de {quantity} (reservado: {new_reserved})",
+                movement.id,
+            )
+            self.outbox.add(events.STOCK_DEPLETED, "alert", alert.id, alert_payload(alert, product))
+            alerts_generated.append(OUT_OF_STOCK)
+        if m_type == MovementType.ADJUSTMENT:
+            alert = self.alerts.register(
+                product_id,
+                DISCREPANCY,
+                f"Desfase de inventario en producto {product_id}: el sistema tenía {before_qty}, "
+                f"se ajustó {quantity:+d} (ahora {new_qty}). "
+                f"Motivo: {reference or 'sin referencia'}",
+                movement.id,
+            )
+            self.outbox.add(events.STOCK_DISCREPANCY, "alert", alert.id, alert_payload(alert, product))
+            alerts_generated.append(DISCREPANCY)
+
+        return AppliedMovement(movement, product, inventory, alerts_generated)
+
     # POST /inventory/movements: una sola transacción (Fase 1)
     def process_movement(self, movement_in: MovementCreate) -> MovementResult:
         """Registra un movimiento en una sola transacción (todo o nada)."""
         product_id = movement_in.product_id
         m_type = MovementType(movement_in.type)
-        alerts_generated: List[str] = []
+        if m_type in TRANSFER_TYPES:
+            # Fase 6: una transferencia "a mano" (salida aquí sin la entrada allá) descuadraría
+            # el inventario de la empresa. Solo la Saga de la central registra estos movimientos.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Las transferencias entre bodegas se piden en la central: POST /transfers (Fase 6, Saga). "
+                       "La Saga registra TRANSFER_OUT y TRANSFER_IN en las dos bodegas.",
+            )
         try:
-            # 1. Leer el saldo actual bloqueando la fila
-            row = self.repo.get_by_product_for_update(product_id)
-            if row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No existe inventario para el producto {product_id} en la bodega {settings.WAREHOUSE_ID}",
-                )
-            inventory, product = row
-            if not product.is_active:
-                raise BusinessRuleError("El producto está dado de baja; no admite movimientos")
-
-            before_qty = inventory.quantity
-            before_reserved = inventory.reserved_quantity
-
-            # 2. Aplicar la regla de negocio (lanza BusinessRuleError si quedaría negativo)
-            new_qty, new_reserved = calculate_new_balance(
-                m_type, movement_in.quantity, before_qty, before_reserved
-            )
-
-            # 3. Guardar nuevo saldo + historial
-            self.repo.update_stock(inventory, new_qty, new_reserved)
-            movement = self.repo.register_movement(
-                product_id=product_id,
-                m_type=m_type.value,
-                qty=movement_in.quantity,
-                quantity_after=new_qty,
-                reserved_after=new_reserved,
-                lot=movement_in.lot,
-                ref=movement_in.reference,
-            )
-
-            # 4. Evento del movimiento para RabbitMQ (Fase 3) — misma transacción
-            self.outbox.add(events.INVENTORY_MOVEMENT_RECORDED, "inventory", product.sku,
-                            movement_payload(movement, product, inventory))
-
-            # 5. Logs automáticos que pide el PDF (misma transacción) + su evento
-            if before_qty > 0 and new_qty == 0:
-                alert = self.alerts.register(
-                    product_id,
-                    OUT_OF_STOCK,
-                    f"Producto {product_id} agotado en {settings.WAREHOUSE_ID} tras {m_type.value} "
-                    f"de {movement_in.quantity} (reservado: {new_reserved})",
-                    movement.id,
-                )
-                self.outbox.add(events.STOCK_DEPLETED, "alert", alert.id, alert_payload(alert, product))
-                alerts_generated.append(OUT_OF_STOCK)
-            if m_type == MovementType.ADJUSTMENT:
-                alert = self.alerts.register(
-                    product_id,
-                    DISCREPANCY,
-                    f"Desfase de inventario en producto {product_id}: el sistema tenía {before_qty}, "
-                    f"se ajustó {movement_in.quantity:+d} (ahora {new_qty}). "
-                    f"Motivo: {movement_in.reference or 'sin referencia'}",
-                    movement.id,
-                )
-                self.outbox.add(events.STOCK_DISCREPANCY, "alert", alert.id, alert_payload(alert, product))
-                alerts_generated.append(DISCREPANCY)
+            applied = self.apply_movement(product_id, m_type, movement_in.quantity, movement_in.lot, movement_in.reference)
+            movement, alerts_generated = applied.movement, applied.alerts_generated
+            new_qty, new_reserved = movement.quantity_after, movement.reserved_after
 
             # 6. Confirmar TODO junto
             self.db.commit()
