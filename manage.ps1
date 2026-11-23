@@ -1,5 +1,4 @@
 <#
-=====================================================================
  Gestión de bodegas en Windows (PowerShell). Mismos comandos que manage_warehouse.sh
 
    .\manage.ps1 start central        -> levanta la plataforma central (Fase 7)
@@ -11,9 +10,6 @@
    .\manage.ps1 logs wh_001 api_1    -> logs de un servicio
    .\manage.ps1 list                 -> bodegas configuradas
 
- Si PowerShell no deja ejecutar scripts:
-   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-=====================================================================
 #>
 param(
     [Parameter(Position = 0)][string]$Action = "help",

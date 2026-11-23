@@ -37,7 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateMoveHelp();
 });
 
-// ---------- utilidades ----------
 // Crea celdas con textContent (NUNCA innerHTML con datos del usuario: evita inyección de HTML/JS)
 function cell(text, className) {
     const td = document.createElement('td');

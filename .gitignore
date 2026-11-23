@@ -15,8 +15,8 @@ exports/
 crash.log
 terraform.tfvars
 .terraform.lock.hcl.bak
-# Se genera con "terraform init" en cada PC (fija la versión del proveedor de AWS)
+
 .terraform.lock.hcl
-# Resultados de pruebas de carga
+
 *.results.json
 docker/components/*/runtime.env

@@ -41,7 +41,7 @@ def create_warehouse(wh_id: str, components: Path = COMPONENTS) -> Path:
         if match is None:
             continue
         port = int(match.group(1)) + step
-        # Con muchas bodegas los rangos se cruzan (ej. la API de WH-081 sería 8081 = la web de WH-001):
+        # Con muchas bodegas los rangos se cruzan.
         # si el puerto ya está ocupado se toma el siguiente libre.
         while port in used:
             port += 1

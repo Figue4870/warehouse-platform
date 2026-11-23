@@ -1,6 +1,4 @@
-# Una sola bodega (WH-001) con todas sus piezas (Fases 1 a 7).
-#   docker network create warehouse_platform   (una vez)
-#   docker compose -f basic-docker-compose.yml up -d --build
+# Una sola bodega (WH-001) con todas sus piezas.
 # Para varias bodegas usar manage.ps1 o manage_warehouse.sh.
 
 name: wh-001

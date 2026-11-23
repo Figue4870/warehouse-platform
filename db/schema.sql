@@ -1,5 +1,4 @@
--- Esquema de la base de datos de una bodega (Fases 1 a 3 y 6).
--- Docker lo ejecuta solo la primera vez; para bases existentes usar db/migrations/.
+
 
 BEGIN;
 

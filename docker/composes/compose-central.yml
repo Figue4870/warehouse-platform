@@ -10,12 +10,10 @@ x-central: &central
     AUTO_CREATE_TABLES: "false"
     AMQP_URL: amqp://${CENTRAL_RABBIT_USER:-platform}:${CENTRAL_RABBIT_PASSWORD:-platform}@central_rabbitmq:5672/%2F
     ONLINE_AFTER_SECONDS: ${ONLINE_AFTER_SECONDS:-45}
-    # Opcional: "WH-001=http://...,WH-002=..." (normalmente se aprenden de los heartbeats)
     WAREHOUSE_API_URLS: ${WAREHOUSE_API_URLS:-}
     # Fase 6: Saga
     SAGA_STEP_TIMEOUT_SECONDS: ${SAGA_STEP_TIMEOUT_SECONDS:-60}
     SAGA_ALLOW_SIMULATION: ${SAGA_ALLOW_SIMULATION:-true}
-    # Reportes con Athena (en AWS los escribe Terraform en runtime.env; vacíos = solo local)
     EXPORT_S3_BUCKET: ${EXPORT_S3_BUCKET:-}
     EXPORT_DIR: /app/exports
     EXPORT_INTERVAL_SECONDS: ${EXPORT_INTERVAL_SECONDS:-60}
@@ -54,7 +52,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${CENTRAL_RABBIT_USER:-platform}
       RABBITMQ_DEFAULT_PASS: ${CENTRAL_RABBIT_PASSWORD:-platform}
     ports:
-      - "${CENTRAL_RABBIT_PORT:-5680}:5672"        # en AWS: aquí se conectan los forwarders de las bodegas
+      - "${CENTRAL_RABBIT_PORT:-5680}:5672"        
       - "${CENTRAL_RABBIT_MGMT_PORT:-15680}:15672" # consola web
     volumes:
       - central_rabbitdata:/var/lib/rabbitmq

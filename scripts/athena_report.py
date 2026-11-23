@@ -1,4 +1,4 @@
-"""Reporte sencillo con Athena desde tu PC (a través de la API central)."""
+"""Reporte sencillo con Athena"""
 
 import argparse
 import csv

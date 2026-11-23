@@ -28,8 +28,6 @@ compose_wh() {
     local env_file="docker/components/${wh}/.env"
     [ -f "$env_file" ] || { echo "Error: no existe $env_file (bodegas: $(warehouses | tr '\n' ' '))"; exit 1; }
     local args=(compose --env-file "$env_file")
-    # runtime.env (opcional, NO va al repositorio): valores de la máquina donde corre,
-    # por ejemplo los que escribe Terraform en EC2. Sobrescriben a los del .env.
     [ -f "docker/components/${wh}/runtime.env" ] && args+=(--env-file "docker/components/${wh}/runtime.env")
     $DOCKER "${args[@]}" -f "$WAREHOUSE_COMPOSE" -p "${wh//_/-}" "$@"
 }

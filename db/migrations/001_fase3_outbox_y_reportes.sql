@@ -1,5 +1,3 @@
--- Migración Fase 3 para una base creada con las Fases 1-2 (si la base es nueva no hace falta).
---   docker exec db_warehouse_WH-001 psql -U postgres -d warehouse_db -f /db/migrations/001_fase3_outbox_y_reportes.sql
 BEGIN;
 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;

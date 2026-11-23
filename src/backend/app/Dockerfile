@@ -1,5 +1,3 @@
-# Contexto de build: la carpeta src/ (para poder copiar la librería compartida src/common)
-#   docker build -f src/backend/app/Dockerfile src
 FROM python:3.11-slim
 
 # Logs inmediatos (sin buffer) y sin archivos .pyc dentro del contenedor

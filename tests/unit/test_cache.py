@@ -1,7 +1,6 @@
 """Pruebas del caché Redis con Cache-Aside (Fase 2), usando un Redis falso."""
 
 
-
 def test_primera_lectura_miss_segunda_hit(client, create_product, fake_redis):
     product = create_product()
     first = client.get(f"/inventory/{product['id']}")
@@ -20,7 +19,7 @@ def test_un_movimiento_invalida_el_cache_y_no_hay_dato_obsoleto(client, create_p
     move(product["id"], "SHIPMENT", 10)                              # BD = 90 y se borra la clave
     after = client.get(f"/inventory/{product['id']}")
     assert after.headers["X-Cache"] == "MISS"                        # tuvo que ir a la BD
-    assert after.json()["quantity"] == 90                            # ¡no 100!
+    assert after.json()["quantity"] == 90                           
 
 
 def test_con_redis_caido_la_api_sigue_respondiendo_desde_postgres(client, create_product, move, fake_redis):

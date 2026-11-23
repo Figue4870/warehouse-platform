@@ -1,5 +1,3 @@
--- Base de datos de la central: modelo de lectura (Fase 7) y estado de la Saga (Fase 6).
--- El modelo de lectura se puede reconstruir desde las bodegas (snapshots + /sync/events).
 BEGIN;
 
 -- Bodegas conocidas y qué tan al día está la central con cada una
@@ -142,7 +140,7 @@ CREATE TABLE IF NOT EXISTS transfers (
 );
 CREATE INDEX IF NOT EXISTS ix_transfers_state ON transfers (state);
 
--- Cada cambio de estado; event_id único = una respuesta de bodega se procesa una sola vez
+-- Cada cambio de estado
 CREATE TABLE IF NOT EXISTS transfer_history (
     id            SERIAL        PRIMARY KEY,
     transfer_id   VARCHAR(30)   NOT NULL,

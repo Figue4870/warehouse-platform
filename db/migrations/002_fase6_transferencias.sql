@@ -1,9 +1,5 @@
--- Migración Fase 6 para una bodega ya creada (si la base es nueva no hace falta).
---   docker exec db_warehouse_WH-001 psql -U postgres -d warehouse_db -f /db/migrations/002_fase6_transferencias.sql
 BEGIN;
 
--- Fase 6: lo que esta bodega hizo en cada paso de una transferencia (Saga).
--- (transfer_id, step) único = un mismo paso nunca se ejecuta dos veces.
 CREATE TABLE IF NOT EXISTS transfer_operations (
     id              SERIAL       PRIMARY KEY,
     transfer_id     VARCHAR(30)  NOT NULL,

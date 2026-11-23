@@ -1,7 +1,4 @@
--- Datos de ejemplo (opcional). Se puede ejecutar varias veces sin duplicar.
---   docker exec db_warehouse_WH-001 psql -U postgres -d warehouse_db -v wh=WH-001 -f /db/seed.sql
 
--- Si no se pasó -v wh=..., se usa WH-001
 \if :{?wh}
 \else
   \set wh WH-001

@@ -1,4 +1,3 @@
-# Una EC2 = una bodega completa (o la plataforma central), como en el laboratorio.
 resource "aws_instance" "this" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
