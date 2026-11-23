@@ -1,5 +1,5 @@
--- Base de datos de la central (Fase 7): modelo de lectura (CQRS).
--- Se puede reconstruir desde las bodegas (snapshots + /sync/events).
+-- Base de datos de la central: modelo de lectura (Fase 7) y estado de la Saga (Fase 6).
+-- El modelo de lectura se puede reconstruir desde las bodegas (snapshots + /sync/events).
 BEGIN;
 
 -- Bodegas conocidas y qué tan al día está la central con cada una
@@ -78,8 +78,9 @@ CREATE TABLE IF NOT EXISTS movement_history (
     reference           VARCHAR(200),
     occurred_at         TIMESTAMPTZ  NOT NULL,
     projected_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    exported_at         TIMESTAMPTZ
+    exported_at         TIMESTAMPTZ              -- cuándo se subió a S3 para Athena (NULL = pendiente)
 );
+CREATE INDEX IF NOT EXISTS ix_movement_history_pending ON movement_history (event_id) WHERE exported_at IS NULL;
 CREATE INDEX IF NOT EXISTS ix_movement_history_wh_time ON movement_history (warehouse_id, occurred_at);
 CREATE INDEX IF NOT EXISTS ix_movement_history_sku ON movement_history (sku);
 
@@ -115,43 +116,62 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     finished_at     TIMESTAMPTZ
 );
 
-COMMIT;
-
-CREATE INDEX IF NOT EXISTS ix_movement_history_pending_export
-    ON movement_history (occurred_at, event_id) WHERE exported_at IS NULL;
-
-BEGIN;
+-- Fase 6: Saga de transferencias (estado propio de la central)
 CREATE TABLE IF NOT EXISTS transfers (
-    id SERIAL PRIMARY KEY,
-    sku VARCHAR(64) NOT NULL,
-    source VARCHAR(20) NOT NULL,
-    destination VARCHAR(20) NOT NULL,
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
-    state VARCHAR(30) NOT NULL,
-    timeout_seconds INTEGER NOT NULL,
-    simulation VARCHAR(24),
-    deadline TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL,
-    finished_at TIMESTAMPTZ,
-    exported_at TIMESTAMPTZ
+    id                        SERIAL        PRIMARY KEY,
+    transfer_id               VARCHAR(30)   UNIQUE,          -- TR-000001
+    sku                       VARCHAR(64)   NOT NULL,
+    source_warehouse_id       VARCHAR(20)   NOT NULL,
+    destination_warehouse_id  VARCHAR(20)   NOT NULL,
+    quantity                  INTEGER       NOT NULL CHECK (quantity > 0),
+    state                     VARCHAR(30)   NOT NULL,
+    compensation_step         VARCHAR(20),
+    failure_reason            TEXT,
+    note                      TEXT,
+    timeout_seconds           INTEGER       NOT NULL,
+    reserve_deadline          TIMESTAMPTZ,
+    receive_deadline          TIMESTAMPTZ,
+    simulate_failure          VARCHAR(30),
+    correlation_id            VARCHAR(80),
+    created_at                TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    finished_at               TIMESTAMPTZ,
+    exported_at               TIMESTAMPTZ,
+    CONSTRAINT ck_transfers_state CHECK (state IN ('REQUESTED', 'RESERVING_SOURCE', 'SOURCE_RESERVED', 'IN_TRANSIT',
+        'DESTINATION_RECEIVED', 'COMPLETED', 'FAILED', 'COMPENSATING', 'RESERVATION_RELEASED'))
 );
+CREATE INDEX IF NOT EXISTS ix_transfers_state ON transfers (state);
+
+-- Cada cambio de estado; event_id único = una respuesta de bodega se procesa una sola vez
 CREATE TABLE IF NOT EXISTS transfer_history (
-    id SERIAL PRIMARY KEY,
-    transfer_id INTEGER NOT NULL REFERENCES transfers(id),
-    event_id VARCHAR(36) UNIQUE,
-    state VARCHAR(30) NOT NULL,
-    note VARCHAR,
-    occurred_at TIMESTAMPTZ NOT NULL
+    id            SERIAL        PRIMARY KEY,
+    transfer_id   VARCHAR(30)   NOT NULL,
+    from_state    VARCHAR(30),
+    to_state      VARCHAR(30)   NOT NULL,
+    event_id      VARCHAR(36)   UNIQUE,
+    event_type    VARCHAR(60),
+    warehouse_id  VARCHAR(20),
+    detail        TEXT,
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS ix_transfer_history_transfer_id ON transfer_history(transfer_id);
+CREATE INDEX IF NOT EXISTS ix_transfer_history_transfer ON transfer_history (transfer_id);
+
+-- OUTBOX de comandos de la central (los publica central_command_relay)
 CREATE TABLE IF NOT EXISTS transfer_commands (
-    id SERIAL PRIMARY KEY,
-    transfer_id INTEGER NOT NULL REFERENCES transfers(id),
-    warehouse VARCHAR(20) NOT NULL,
-    step VARCHAR(20) NOT NULL,
-    payload JSON NOT NULL,
-    published_at TIMESTAMPTZ,
-    UNIQUE (transfer_id, step)
+    id              SERIAL        PRIMARY KEY,
+    command_id      VARCHAR(36)   NOT NULL UNIQUE,
+    transfer_id     VARCHAR(30)   NOT NULL,
+    warehouse_id    VARCHAR(20)   NOT NULL,
+    command_type    VARCHAR(20)   NOT NULL,
+    payload         JSONB         NOT NULL,
+    deadline        TIMESTAMPTZ,
+    correlation_id  VARCHAR(80),
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    published_at    TIMESTAMPTZ,
+    attempts        INTEGER       NOT NULL DEFAULT 0,
+    last_error      TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_transfer_commands_transfer_id ON transfer_commands(transfer_id);
+CREATE INDEX IF NOT EXISTS ix_transfer_commands_transfer ON transfer_commands (transfer_id);
+CREATE INDEX IF NOT EXISTS ix_transfer_commands_pending ON transfer_commands (id) WHERE published_at IS NULL;
+
 COMMIT;

@@ -48,7 +48,7 @@
 <header>
   <div>
     <h1>Plataforma Central</h1>
-    <div class="sub">CQRS (Fase 7) · estado de las bodegas, inventario global y reportes</div>
+    <div class="sub">CQRS (Fase 7) · Saga de transferencias (Fase 6) · Reportes (modelo de lectura y Athena)</div>
   </div>
   <div class="row">
     <span id="health" class="badge warn">conectando…</span>
@@ -69,6 +69,28 @@
   </section>
 
   <section class="card">
+    <h2>Nueva transferencia (Saga)</h2>
+    <div class="form">
+      <label>SKU <input id="t-sku" placeholder="P-001"></label>
+      <label>Origen <select id="t-src"></select></label>
+      <label>Destino <select id="t-dst"></select></label>
+      <label>Cantidad <input id="t-qty" type="number" min="1" value="10"></label>
+      <label>Plazo por paso (s) <input id="t-timeout" type="number" min="5" placeholder="60"></label>
+      <label>Falla simulada
+        <select id="t-sim"><option value="">ninguna</option><option value="SOURCE_REJECTS">el origen rechaza</option>
+        <option value="DESTINATION_REJECTS">el destino rechaza</option></select></label>
+    </div>
+    <button id="t-send">Transferir</button>
+    <div id="t-msg" class="msg muted"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Transferencias</h2>
+    <div class="scroll"><table id="transfers"></table></div>
+    <div id="detail"></div>
+  </section>
+
+  <section class="card">
     <h2>Reportes (modelo de lectura)</h2>
     <div class="row" style="margin-bottom:.6rem">
       <button class="ghost" data-report="/reports/top-products?days=30">Top productos</button>
@@ -78,34 +100,20 @@
     <div class="scroll"><table id="report"></table></div>
   </section>
 
+  <section class="card">
+    <h2>Reportes con Athena</h2>
+    <div id="athena-state" class="muted" style="margin-bottom:.6rem">Cargando…</div>
+    <div id="athena-buttons" class="row" style="margin-bottom:.6rem"></div>
+    <div id="athena-msg" class="msg muted"></div>
+    <div class="scroll"><table id="athena"></table></div>
+  </section>
 </div>
 
-<section>
-  <h2>Transferencias</h2>
-  <form id="new-transfer">
-    <input name="sku" placeholder="SKU" required>
-    <input name="source_warehouse_id" placeholder="Origen" required>
-    <input name="destination_warehouse_id" placeholder="Destino" required>
-    <input name="quantity" type="number" min="1" placeholder="Cantidad" required>
-    <input name="timeout_seconds" type="number" min="5" max="3600" value="60" aria-label="Plazo por paso en segundos">
-    <select name="simulate_failure" aria-label="Simular fallo">
-      <option value="">Sin simulación</option>
-      <option value="SOURCE_REJECTS">Origen rechaza</option>
-      <option value="DESTINATION_REJECTS">Destino rechaza</option>
-    </select>
-    <button>Solicitar</button>
-  </form>
-  <button id="refresh-transfers">Actualizar transferencias</button>
-  <select id="transfer-list" aria-label="Transferencia"></select>
-  <pre id="transfer-detail" aria-live="polite"></pre>
-  <h2>Reportes con Athena</h2>
-  <select id="athena-list" aria-label="Reporte Athena"></select>
-  <button id="athena-run" disabled>Ejecutar</button>
-  <pre id="athena-result" aria-live="polite"></pre>
-</section>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STATE_CLASS = { COMPLETED:"ok", FAILED:"bad", RESERVATION_RELEASED:"warn", COMPENSATING:"warn", REQUESTED:"info",
+                      RESERVING_SOURCE:"info", SOURCE_RESERVED:"info", IN_TRANSIT:"violet", DESTINATION_RECEIVED:"violet" };
 const ago = (iso) => { if (!iso) return "—"; const s = Math.round((Date.now() - new Date(iso)) / 1000); return s < 60 ? `${s} s` : `${Math.round(s/60)} min`; };
 
 async function api(path, options) {
@@ -137,6 +145,12 @@ async function loadWarehouses() {
       <small>${esc(w.note)}</small>
       <small>eventos: ${esc(w.watermark_sequence)} / ${esc(w.reported_sequence)} · contacto hace ${ago(w.last_heartbeat_at)}</small>
     </div>`).join("") || `<span class="muted">Ninguna bodega ha enviado heartbeats todavía</span>`;
+  for (const id of ["t-src", "t-dst"]) {
+    const select = $(id), current = select.value;
+    select.innerHTML = list.map((w) => `<option>${esc(w.warehouse_id)}</option>`).join("");
+    if (current) select.value = current;
+  }
+  if (!$("t-dst").dataset.touched && list.length > 1) $("t-dst").selectedIndex = 1;
 }
 
 async function loadInventory() {
@@ -146,81 +160,77 @@ async function loadInventory() {
         data.items.map((i) => [i.sku, i.name, ...whs.map((w) => i.by_warehouse[w] ?? "—"), i.total_quantity, i.total_reserved]));
 }
 
+async function loadTransfers() {
+  const list = await api("/transfers?limit=12");
+  const el = $("transfers");
+  if (!list.length) { el.innerHTML = `<tr><td class="muted">Todavía no hay transferencias</td></tr>`; return; }
+  el.innerHTML = `<tr><th>ID</th><th>SKU</th><th>Ruta</th><th>Cant.</th><th>Estado</th><th>Detalle</th></tr>` +
+    list.map((t) => `<tr class="click" data-id="${esc(t.transfer_id)}"><td>${esc(t.transfer_id)}</td><td>${esc(t.sku)}</td>
+      <td>${esc(t.source_warehouse_id)} → ${esc(t.destination_warehouse_id)}</td><td>${esc(t.quantity)}</td>
+      <td><span class="badge ${STATE_CLASS[t.state] || "info"}">${esc(t.state)}</span></td>
+      <td class="muted">${esc(t.note)}</td></tr>`).join("");
+  el.querySelectorAll("tr.click").forEach((tr) => tr.onclick = () => showTransfer(tr.dataset.id));
+  if ($("detail").dataset.id) showTransfer($("detail").dataset.id);
+}
+
+async function showTransfer(id) {
+  const t = await api(`/transfers/${encodeURIComponent(id)}`);
+  $("detail").dataset.id = id;
+  $("detail").innerHTML = `<h3 style="margin-top:1rem">${esc(t.transfer_id)} · ${esc(t.state)}</h3>
+    <ul class="timeline">${t.history.map((h) => `<li><b>${esc(h.to)}</b> <span class="muted">${new Date(h.at).toLocaleTimeString()}
+      ${h.warehouse_id ? "· " + esc(h.warehouse_id) : ""}</span><br>${esc(h.detail)}</li>`).join("")}</ul>`;
+}
+
+$("t-dst").onchange = () => $("t-dst").dataset.touched = "1";
+$("t-send").onclick = async () => {
+  const body = { sku: $("t-sku").value.trim(), source_warehouse_id: $("t-src").value, destination_warehouse_id: $("t-dst").value,
+                 quantity: Number($("t-qty").value) };
+  if ($("t-timeout").value) body.timeout_seconds = Number($("t-timeout").value);
+  if ($("t-sim").value) body.simulate_failure = $("t-sim").value;
+  $("t-send").disabled = true;  // evita crear dos transferencias con un doble clic
+  try {
+    const t = await api("/transfers", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
+    $("t-msg").textContent = `202 Accepted: ${t.transfer_id} (${t.status}). Mira cómo avanza abajo.`;
+    $("detail").dataset.id = t.transfer_id;
+    refresh();
+  } catch (e) { $("t-msg").textContent = "Error: " + e.message; }
+  $("t-send").disabled = false;
+};
+
 document.querySelectorAll("[data-report]").forEach((b) => b.onclick = async () => {
   const rows = await api(b.dataset.report);
   const cols = rows.length ? Object.keys(rows[0]) : [];
   table($("report"), cols, rows.map((r) => cols.map((c) => r[c])));
 });
 
+async function loadAthena() {
+  const info = await api("/reports/athena");
+  $("athena-state").innerHTML = info.configured
+    ? `Workgroup <b>${esc(info.workgroup)}</b> · base <b>${esc(info.database)}</b> · datos en ${esc(info.export_destination)}`
+    : `${esc(info.note)}<br>Destino del exportador: ${esc(info.export_destination)}`;
+  $("athena-buttons").innerHTML = info.reports.map((r) => `<button class="ghost" ${info.configured ? "" : "disabled"} data-athena="${esc(r.name)}" title="${esc(r.title)}">${esc(r.name)}</button>`).join("");
+  document.querySelectorAll("[data-athena]").forEach((b) => b.onclick = () => runAthena(b.dataset.athena));
+}
+
+async function runAthena(name) {
+  try {
+    const start = await api(`/reports/athena/${name}?days=30`, { method:"POST" });
+    $("athena-msg").textContent = `Consulta ${start.query_execution_id} enviada…`;
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const st = await api(start.status_url);
+      $("athena-msg").textContent = `${st.state}${st.data_scanned_bytes != null ? " · " + st.data_scanned_bytes + " bytes leídos" : ""}`;
+      if (st.state === "SUCCEEDED") { table($("athena"), st.columns, st.rows); return; }
+      if (["FAILED", "CANCELLED"].includes(st.state)) { $("athena-msg").textContent = `${st.state}: ${st.reason}`; return; }
+    }
+  } catch (e) { $("athena-msg").textContent = "Error: " + e.message; }
+}
+
 async function refresh() {
   await loadHealth();
-  await Promise.allSettled([loadWarehouses(), loadInventory()]);
+  await Promise.allSettled([loadWarehouses(), loadInventory(), loadTransfers()]);
 }
-async function showTransfer() {
-  const id = $("transfer-list").value;
-  if (!id) return;
-  const result = await api("/transfers/" + encodeURIComponent(id));
-  $("transfer-detail").textContent = result.state + "\n" + result.history.map(
-    (event) => [event.occurred_at, event.state, event.note].filter(Boolean).join(" · ")
-  ).join("\n");
-}
-
-async function refreshTransfers() {
-  const list = $("transfer-list");
-  const selected = list.value;
-  list.replaceChildren(...(await api("/transfers")).map(
-    (row) => new Option(row.transfer_id + " · " + row.state, row.transfer_id)
-  ));
-  if ([...list.options].some((option) => option.value === selected)) list.value = selected;
-  await showTransfer();
-}
-
-$("refresh-transfers").onclick = () => refreshTransfers().catch((error) => {
-  $("transfer-detail").textContent = error.message;
-});
-$("transfer-list").onchange = () => showTransfer().catch((error) => {
-  $("transfer-detail").textContent = error.message;
-});
-$("new-transfer").onsubmit = async (event) => {
-  event.preventDefault();
-  const data = Object.fromEntries(new FormData(event.currentTarget));
-  data.quantity = Number(data.quantity);
-  data.timeout_seconds = Number(data.timeout_seconds);
-  if (!data.simulate_failure) delete data.simulate_failure;
-  try {
-    await api("/transfers", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)});
-    await refreshTransfers();
-  } catch (error) {
-    $("transfer-detail").textContent = error.message;
-  }
-};
-api("/reports/athena").then((data) => {
-  $("athena-list").replaceChildren(...Object.entries(data.reports).map(([id, label]) => new Option(label, id)));
-  $("athena-run").disabled = !data.configured;
-  if (!data.configured) $("athena-result").textContent = "Athena no está configurado";
-}).catch((error) => { $("athena-result").textContent = error.message; });
-
-$("athena-run").onclick = async () => {
-  $("athena-run").disabled = true;
-  try {
-    const run = await api("/reports/athena/" + encodeURIComponent($("athena-list").value), {method: "POST"});
-    for (let attempt = 0; attempt < 150; attempt++) {
-      const result = await api("/reports/athena/executions/" + encodeURIComponent(run.execution_id));
-      $("athena-result").textContent = result.rows
-        ? [result.columns, ...result.rows].map((row) => row.join(" · ")).join("\n")
-        : [result.status, result.reason].filter(Boolean).join(" · ");
-      if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(result.status)) return;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-    $("athena-result").textContent = "Se agotó el plazo de consulta del resultado";
-  } catch (error) {
-    $("athena-result").textContent = error.message;
-  } finally {
-    $("athena-run").disabled = false;
-  }
-};
-refreshTransfers().catch((error) => { $("transfer-detail").textContent = error.message; });
-refresh();
+refresh(); loadAthena();
 setInterval(() => { if ($("auto").checked) refresh(); }, 5000);
 </script>
 </body>

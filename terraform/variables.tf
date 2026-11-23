@@ -105,6 +105,13 @@ variable "central_rabbit_password" {
   }
 }
 
+# reportes con Athena
+variable "enable_analytics" {
+  description = "Crear S3 + Glue + Athena para los reportes (false = solo EC2)."
+  type        = bool
+  default     = true
+}
+
 # bodegas
 variable "warehouses" {
   description = <<-EOT
@@ -125,9 +132,4 @@ variable "warehouses" {
     wh_002 = { wh_id = "WH-002", api_port = 8002, web_port = 8082, rabbit_mgmt_port = 15674, instance_type = "t3.medium" }
     wh_003 = { wh_id = "WH-003", api_port = 8003, web_port = 8083, rabbit_mgmt_port = 15675 }
   }
-}
-
-variable "enable_analytics" {
-  type    = bool
-  default = true
 }

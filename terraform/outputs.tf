@@ -23,3 +23,15 @@ output "central" {
     ssh        = "ssh -i labsuser.pem ubuntu@${module.central.public_ip}"
   }
 }
+
+output "analytics" {
+  description = "Reportes con Athena"
+  value = var.enable_analytics ? {
+    bucket        = module.analytics[0].bucket
+    database      = module.analytics[0].database
+    workgroup     = module.analytics[0].workgroup
+    tables        = module.analytics[0].tables
+    named_queries = module.analytics[0].named_queries
+    console       = "https://${var.aws_region}.console.aws.amazon.com/athena/home?region=${var.aws_region}#/query-editor"
+  } : null
+}

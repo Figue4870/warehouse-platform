@@ -24,8 +24,10 @@ resource "aws_instance" "this" {
   }
 
   metadata_options {
-    http_tokens                 = "required"
-    http_put_response_hop_limit = var.component == "central" ? 2 : 1
+    http_tokens = "required" # IMDSv2 (más seguro)
+    # 2 saltos: los CONTENEDORES también pueden pedir las credenciales temporales de LabRole
+    # (las usa la central para S3 y Athena). Con 1, solo el sistema operativo podría.
+    http_put_response_hop_limit = 2
   }
 
   tags = {

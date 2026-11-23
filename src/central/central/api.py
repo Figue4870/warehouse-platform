@@ -30,9 +30,10 @@ app = FastAPI(
         "Fase 7: visión consolidada de todas las bodegas con CQRS. Las bodegas son dueñas de su inventario; "
         "la central mantiene un MODELO DE LECTURA alimentado por sus eventos (consistencia eventual).\n\n"
         "Compara `/global/inventory/{sku}` (modelo de lectura) con `/global/inventory/{sku}/live` (consulta en vivo a cada bodega).\n\n"
-        "Tablero web: `/dashboard`."
+        "Fase 6: transferencias entre bodegas con una Saga orquestada (`POST /transfers`).\n\n"
+        "Reportes: `/reports/*` (modelo de lectura) y `/reports/athena/*` (Athena sobre S3). Tablero: `/dashboard`."
     ),
-    version="7.0.0",
+    version="7.1.0",
     lifespan=lifespan,
 )
 
@@ -66,6 +67,6 @@ app.include_router(warehouses.router)
 app.include_router(global_inventory.router)
 app.include_router(sync.router)
 app.include_router(reports.router)
-app.include_router(dashboard.router)
-app.include_router(athena.router)
 app.include_router(transfers.router)
+app.include_router(athena.router)
+app.include_router(dashboard.router)

@@ -182,11 +182,12 @@ services:
     networks: [default, platform]
     depends_on: *worker-deps
 
+  # Fase 6: pasos de la Saga de transferencias
   command_worker:
     <<: *backend
     container_name: command_worker_${WH_ID}
     command: ["python", "-m", "app.workers.command_worker"]
-    networks: [default, platform]
+    networks: [default, platform]           # escucha la cola commands.<WH_ID> del RabbitMQ CENTRAL
     depends_on:
       postgres_db:
         condition: service_healthy

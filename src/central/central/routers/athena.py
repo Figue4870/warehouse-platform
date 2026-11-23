@@ -1,78 +1,80 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+"""Reportes con Athena (sobre los archivos que el exportador sube a S3)."""
+
+from functools import lru_cache
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from central.analytics.athena import REPORTS, AthenaNotConfigured, AthenaReports, render_sql
 from central.analytics.exporter import export_status
+from central.analytics.storage import storage_from_settings
+from central.config import settings
 from central.database import get_db
 
-from central.analytics.reports import REPORTS, render_sql
-from central.config import settings
-
-router = APIRouter(prefix="/reports/athena", tags=["Athena"])
+router = APIRouter(prefix="/reports/athena", tags=["Reports (Athena)"])
 
 
-def configured() -> bool:
-    return bool(settings.ATHENA_DATABASE and settings.ATHENA_WORKGROUP)
+@lru_cache
+def get_athena() -> AthenaReports:
+    return AthenaReports()
 
 
-def client():
-    if not configured():
-        raise HTTPException(503, "Athena no está configurado")
-    import boto3
-
-    return boto3.client("athena")
+def _not_configured(error: Exception):
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error))
 
 
-def report_sql(name: str, days: int) -> str:
-    try:
-        return render_sql(name, settings.ATHENA_DATABASE or "warehouse_platform", days)
-    except KeyError as error:
-        raise HTTPException(404, "Reporte desconocido") from error
+def _check(name: str):
+    if name not in REPORTS:
+        raise HTTPException(status_code=404, detail=f"Reporte desconocido. Disponibles: {', '.join(REPORTS)}")
 
 
-@router.get("")
-def list_reports():
-    return {"configured": configured(), "reports": REPORTS}
+@router.get("", summary="Reportes de Athena disponibles")
+def list_reports(athena: AthenaReports = Depends(get_athena)):
+    return {
+        "configured": athena.configured,
+        "workgroup": athena.workgroup or None,
+        "database": athena.database,
+        "export_destination": storage_from_settings().describe(),
+        "note": None if athena.configured else "Athena solo existe en AWS (terraform apply). Localmente el exportador escribe en la carpeta exports/.",
+        "reports": [{"name": name, "title": title, "sql_url": f"/reports/athena/{name}/sql"} for name, title in REPORTS.items()],
+    }
 
 
-@router.get("/export-status")
+@router.get("/export-status", summary="Exportación a S3: filas exportadas y pendientes")
 def get_export_status(db: Session = Depends(get_db)):
-    return export_status(db)
+    return {"destination": storage_from_settings().describe(), "every_seconds": settings.EXPORT_INTERVAL_SECONDS,
+            **export_status(db)}
 
 
-@router.get("/{name}/sql")
-def show_sql(name: str, days: int = Query(30, ge=1, le=365)):
-    return {"sql": report_sql(name, days)}
+@router.get("/executions/{execution_id}", summary="Estado de una consulta y sus resultados cuando termina")
+def get_execution(execution_id: str, athena: AthenaReports = Depends(get_athena)):
+    try:
+        info = athena.status(execution_id)
+        if info["state"] == "SUCCEEDED":
+            columns, rows = athena.results(execution_id)
+            info.update({"columns": columns, "rows": rows, "row_count": len(rows)})
+        return info
+    except AthenaNotConfigured as error:
+        _not_configured(error)
+    except Exception as error:  # noqa: BLE001 - id inexistente, permisos...
+        raise HTTPException(status_code=502, detail=f"Athena respondió con error: {error}")
 
 
-@router.post("/{name}", status_code=202)
-def start_report(name: str, days: int = Query(30, ge=1, le=365)):
-    query = report_sql(name, days)
-    result = client().start_query_execution(
-        QueryString=query,
-        QueryExecutionContext={"Database": settings.ATHENA_DATABASE},
-        WorkGroup=settings.ATHENA_WORKGROUP,
-    )
-    return {"execution_id": result["QueryExecutionId"]}
+@router.get("/{name}/sql", response_class=PlainTextResponse, summary="SQL de un reporte")
+def get_sql(name: str, days: int = Query(30, ge=1, le=3650), athena: AthenaReports = Depends(get_athena)):
+    _check(name)
+    return render_sql(name, athena.database, days)
 
 
-@router.get("/executions/{execution_id}")
-def get_execution(execution_id: str):
-    athena = client()
-    execution = athena.get_query_execution(QueryExecutionId=execution_id)["QueryExecution"]
-    if execution.get("WorkGroup") != settings.ATHENA_WORKGROUP:
-        raise HTTPException(404, "Ejecución desconocida")
-    status = execution["Status"]
-    if status["State"] != "SUCCEEDED":
-        return {"status": status["State"], "reason": status.get("StateChangeReason")}
-
-    pages = athena.get_paginator("get_query_results").paginate(QueryExecutionId=execution_id)
-    columns = []
-    rows = []
-    for index, page in enumerate(pages):
-        result = page["ResultSet"]
-        records = result.get("Rows", [])
-        if index == 0:
-            columns = [column["Name"] for column in result["ResultSetMetadata"]["ColumnInfo"]]
-            records = records[1:]
-        rows.extend([value.get("VarCharValue") for value in record["Data"]] for record in records)
-    return {"status": "SUCCEEDED", "columns": columns, "rows": rows}
+@router.post("/{name}", status_code=status.HTTP_202_ACCEPTED, summary="Ejecutar un reporte en Athena (asíncrono)")
+def run_report(name: str, days: int = Query(30, ge=1, le=3650), athena: AthenaReports = Depends(get_athena)):
+    _check(name)
+    try:
+        execution_id = athena.start(name, days)
+    except AthenaNotConfigured as error:
+        _not_configured(error)
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Athena respondió con error: {error}")
+    return {"report": name, "days": days, "query_execution_id": execution_id,
+            "status_url": f"/reports/athena/executions/{execution_id}"}

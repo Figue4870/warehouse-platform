@@ -8,8 +8,10 @@ const MOVE_HELP = {
     RESERVATION: 'Pasa unidades de disponible a reservado.',
     RELEASE: 'Devuelve unidades de reservado a disponible.',
     RETURN: 'Suma unidades devueltas al disponible.',
-    TRANSFER_IN: 'Entrada desde otra bodega (en la Fase 6 lo hará la Saga automáticamente).',
-    TRANSFER_OUT: 'Salida hacia otra bodega (en la Fase 6 lo hará la Saga automáticamente).',
+    // Fase 6: las transferencias se piden en la central (POST /transfers o su tablero /dashboard);
+    // la API de la bodega rechaza estos tipos con 409 para que nunca salga algo sin entrar en la otra bodega.
+    TRANSFER_IN: 'Las transferencias se piden en la central (Saga, Fase 6).',
+    TRANSFER_OUT: 'Las transferencias se piden en la central (Saga, Fase 6).',
 };
 
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });

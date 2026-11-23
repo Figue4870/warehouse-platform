@@ -1,6 +1,6 @@
 """Modelo de lectura de la central (CQRS, lado de consulta)."""
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, Column, DateTime, Integer, Numeric, String, Text, UniqueConstraint
 
 from central.database import Base
 
@@ -99,8 +99,7 @@ class MovementHistoryEntity(Base):
     reference = Column(String(200))
     occurred_at = Column(DateTime(timezone=True), nullable=False)
     projected_at = Column(DateTime(timezone=True), nullable=False, default=_now)
-
-    exported_at = Column(DateTime(timezone=True))
+    exported_at = Column(DateTime(timezone=True))  # cuándo se subió a S3 (NULL = pendiente)
 
 
 class CentralAlertEntity(Base):
@@ -142,3 +141,65 @@ class SyncRunEntity(Base):
     detail = Column(Text)
     started_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     finished_at = Column(DateTime(timezone=True))
+
+
+# Fase 6: estado de la Saga (no es modelo de lectura; no se reconstruye desde las bodegas)
+class TransferEntity(Base):
+    """Una transferencia entre dos bodegas y en qué paso de la Saga va."""
+
+    __tablename__ = "transfers"
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(String(30), unique=True)          # TR-000001 (se asigna al crearla)
+    sku = Column(String(64), nullable=False)
+    source_warehouse_id = Column(String(20), nullable=False)
+    destination_warehouse_id = Column(String(20), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    state = Column(String(30), nullable=False)
+    compensation_step = Column(String(20))                 # CANCEL_RECEIVE | RELEASE (solo en COMPENSATING)
+    failure_reason = Column(Text)
+    note = Column(Text)                                    # explicación del estado actual
+    timeout_seconds = Column(Integer, nullable=False)
+    reserve_deadline = Column(DateTime(timezone=True))
+    receive_deadline = Column(DateTime(timezone=True))
+    simulate_failure = Column(String(30))
+    correlation_id = Column(String(80))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    finished_at = Column(DateTime(timezone=True))
+    exported_at = Column(DateTime(timezone=True))
+
+
+class TransferHistoryEntity(Base):
+    """Cada cambio de estado (diagrama de estados "en vivo"). event_id único = respuesta ya procesada."""
+
+    __tablename__ = "transfer_history"
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(String(30), nullable=False, index=True)
+    from_state = Column(String(30))
+    to_state = Column(String(30), nullable=False)
+    event_id = Column(String(36), unique=True)
+    event_type = Column(String(60))
+    warehouse_id = Column(String(20))
+    detail = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class TransferCommandEntity(Base):
+    """OUTBOX de comandos de la central: se guardan con el cambio de estado y un relay los publica."""
+
+    __tablename__ = "transfer_commands"
+
+    id = Column(Integer, primary_key=True)
+    command_id = Column(String(36), unique=True, nullable=False)
+    transfer_id = Column(String(30), nullable=False, index=True)
+    warehouse_id = Column(String(20), nullable=False)
+    command_type = Column(String(20), nullable=False)
+    payload = Column(JSON, nullable=False)
+    deadline = Column(DateTime(timezone=True))
+    correlation_id = Column(String(80))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    published_at = Column(DateTime(timezone=True))        # NULL = pendiente
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text)

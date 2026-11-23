@@ -9,8 +9,8 @@ MOVEMENT_TYPES = (
     "ADJUSTMENT",    # ajuste por desfase (conteo físico distinto al sistema)
     "RESERVATION",   # apartar unidades
     "RELEASE",       # liberar unidades apartadas
-    "TRANSFER_OUT",  # salida hacia otra bodega (Fase 6 la convertirá en Saga)
-    "TRANSFER_IN",   # entrada desde otra bodega
+    "TRANSFER_OUT",  # salida hacia otra bodega (Fase 6: solo la registra la Saga)
+    "TRANSFER_IN",   # entrada desde otra bodega (Fase 6: solo la registra la Saga)
     "RETURN",        # devolución
 )
 
