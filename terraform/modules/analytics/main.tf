@@ -7,41 +7,14 @@ locals {
   reports = { for f in fileset(var.sql_dir, "*.sql") : trimsuffix(f, ".sql") => f }
 }
 
-# S3
-resource "aws_s3_bucket" "data" {
-  bucket_prefix = "${var.project_name}-datos-" # AWS completa el nombre (único en el mundo)
-  force_destroy = true                         # terraform destroy borra también los archivos (entorno de práctica)
-}
+# S3: el bucket no lo crea Terraform. En el Learner Lab una SCP niega
+# s3:GetBucketObjectLockConfiguration y aws_s3_bucket falla con AccessDenied.
+# Aquí solo se calcula el nombre; lo crea el central_exporter al arrancar (LabRole).
+# terraform destroy NO lo borra: vaciarlo y borrarlo desde la consola de S3.
+data "aws_caller_identity" "current" {}
 
-resource "aws_s3_bucket_public_access_block" "data" {
-  bucket                  = aws_s3_bucket.data.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
-  bucket = aws_s3_bucket.data.id
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "data" {
-  bucket = aws_s3_bucket.data.id
-  rule {
-    id     = "borrar-resultados-viejos-de-athena"
-    status = "Enabled"
-    filter {
-      prefix = "athena-results/"
-    }
-    expiration {
-      days = 7
-    }
-  }
+locals {
+  bucket = "${var.project_name}-datos-${data.aws_caller_identity.current.account_id}"
 }
 
 # Glue (catálogo de tablas)
@@ -66,7 +39,7 @@ resource "aws_glue_catalog_table" "this" {
     "projection.dt.range"         = "2026-01-01,NOW"
     "projection.dt.interval"      = "1"
     "projection.dt.interval.unit" = "DAYS"
-    "storage.location.template"   = "s3://${aws_s3_bucket.data.bucket}/${each.key}/dt=$${dt}/"
+    "storage.location.template"   = "s3://${local.bucket}/${each.key}/dt=$${dt}/"
   }
 
   partition_keys {
@@ -75,7 +48,7 @@ resource "aws_glue_catalog_table" "this" {
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.data.bucket}/${each.key}/"
+    location      = "s3://${local.bucket}/${each.key}/"
     input_format  = "org.apache.hadoop.mapred.TextInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
 
@@ -108,7 +81,7 @@ resource "aws_athena_workgroup" "this" {
     bytes_scanned_cutoff_per_query     = var.bytes_scanned_cutoff
 
     result_configuration {
-      output_location = "s3://${aws_s3_bucket.data.bucket}/athena-results/"
+      output_location = "s3://${local.bucket}/athena-results/"
       encryption_configuration {
         encryption_option = "SSE_S3"
       }

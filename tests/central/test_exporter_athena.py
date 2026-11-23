@@ -84,12 +84,17 @@ def test_solo_se_exportan_transferencias_terminadas(central_sf, tmp_path):
     assert all(29 <= r["duration_seconds"] <= 31 for r in rows)
 
 
-def test_s3_put_object(monkeypatch):
+def test_s3_crea_el_bucket_si_no_existe_y_sube(monkeypatch):
     client = boto3.client("s3", region_name="us-east-1", aws_access_key_id="x", aws_secret_access_key="y")
     with Stubber(client) as stub:
-        stub.add_response("put_object", {"ETag": '"abc"'}, {"Bucket": "datos", "Key": "movements/dt=2026-11-16/l.json",
-                                                            "Body": ANY, "ContentType": "application/x-ndjson"})
-        S3Storage("datos", client).put("movements/dt=2026-11-16/l.json", b'{"a": 1}\n')
+        stub.add_client_error("head_bucket", service_error_code="404", http_status_code=404, expected_params={"Bucket": "datos"})
+        stub.add_response("create_bucket", {"Location": "/datos"}, {"Bucket": "datos"})
+        for name in ("l.json", "m.json"):
+            stub.add_response("put_object", {"ETag": '"abc"'}, {"Bucket": "datos", "Key": f"movements/dt=2026-11-16/{name}",
+                                                                "Body": ANY, "ContentType": "application/x-ndjson"})
+        storage = S3Storage("datos", client, region="us-east-1")
+        storage.put("movements/dt=2026-11-16/l.json", b'{"a": 1}\n')
+        storage.put("movements/dt=2026-11-16/m.json", b'{"a": 2}\n')   # ya no vuelve a revisar el bucket
         stub.assert_no_pending_responses()
 
 

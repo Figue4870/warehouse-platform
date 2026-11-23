@@ -7,9 +7,11 @@ Cada máquina instala Docker, clona el repositorio y levanta lo suyo con `./mana
   (`CENTRAL_AMQP_URL`) y los eventos viajan por la red privada de la VPC.
 - Security group de la central: API (8090) abierta; AMQP (5680) solo desde las bodegas; SSH y
   consola de RabbitMQ solo desde `admin_cidr`.
-- `module.analytics` (si `enable_analytics = true`): bucket S3, base y tablas de Glue, workgroup de
-  Athena y las 5 consultas guardadas (ver `docs/fases/REPORTES_ATHENA.md`). Los contenedores de la
-  central usan las credenciales de LabRole (IMDSv2 con `http_put_response_hop_limit = 2`).
+- `module.analytics` (si `enable_analytics = true`): base y tablas de Glue, workgroup de Athena y
+  las 5 consultas guardadas (ver `docs/fases/REPORTES_ATHENA.md`). El bucket S3
+  (`warehouse-platform-datos-<cuenta>`) lo crea la central al arrancar, porque en el Learner Lab
+  Terraform no puede manejar buckets. Los contenedores de la central usan las credenciales de LabRole
+  (IMDSv2 con `http_put_response_hop_limit = 2`).
 - Usa la VPC por defecto, la llave `vockey` y el perfil `LabInstanceProfile` (el Learner Lab no deja
   crear roles IAM).
 
@@ -33,7 +35,10 @@ terraform output     # URLs de cada bodega, de la central y datos de Athena
 6. Esperar unos 5 minutos. Ver el avance:
    `ssh -i labsuser.pem ubuntu@<ip> "sudo tail -f /var/log/warehouse-bootstrap.log"`.
    Luego `http://<ip-central>:8090/warehouses` debe mostrar las 3 bodegas `ONLINE`.
-7. Al terminar: `terraform destroy`.
+7. Al terminar: `terraform destroy`. El bucket de S3 no se borra solo: en la consola de S3,
+   *Empty* y luego *Delete*.
+
+La prueba completa en AWS está en `docs/fases/PRUEBA_AWS.md`.
 
 ## Cambios comunes
 

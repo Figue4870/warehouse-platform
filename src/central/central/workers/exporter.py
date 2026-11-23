@@ -22,6 +22,16 @@ def main() -> None:
     exporter = Exporter(SessionLocal, storage, settings.EXPORT_BATCH_SIZE, settings.EXPORT_SNAPSHOT_SECONDS)
     logger.info("Exportador iniciado", extra={"event": "exporter_started", "context": {
         "destination": storage.describe(), "every_seconds": settings.EXPORT_INTERVAL_SECONDS}})
+    # En AWS el bucket debe existir antes de la primera consulta de Athena (guarda ahí sus resultados)
+    while not stopper.stop and hasattr(storage, "ensure_bucket"):
+        try:
+            if storage.ensure_bucket():
+                logger.info("Bucket de S3 creado", extra={"event": "bucket_created", "context": {"bucket": storage.bucket}})
+            break
+        except Exception as error:  # noqa: BLE001 - sin red o sin permisos: se reintenta
+            logger.warning("No se pudo crear el bucket; se reintentará", extra={"event": "bucket_error",
+                           "context": {"bucket": storage.bucket, "error": str(error)}})
+            time.sleep(15)
     while not stopper.stop:
         try:
             result = exporter.run_once()

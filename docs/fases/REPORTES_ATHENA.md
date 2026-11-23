@@ -30,6 +30,8 @@ central (modelo de lectura) -> central_exporter (cada 60 s)
 - **Sin pérdida:** cada fila tiene `exported_at`. El exportador sube lo pendiente y solo después lo
   marca. Si S3 falla, se reintenta en la siguiente vuelta. Si se cae justo después de subir, esas
   filas se suben otra vez; por eso las consultas usan `SELECT DISTINCT` y nada se cuenta dos veces.
+- El bucket lo crea la central al arrancar (`S3Storage.ensure_bucket`), no Terraform: en el Learner
+  Lab una política de la organización no deja a Terraform leer la configuración de los buckets.
 - La central usa las credenciales de **LabRole** del Learner Lab (no se guardan llaves).
 
 ## Los reportes (`src/central/central/analytics/sql/`)

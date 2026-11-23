@@ -10,6 +10,7 @@ Proyecto del curso **Computación en la Nube e IoT**: plataforma de bodegas cons
 | 7 | Plataforma central (CQRS), sincronización sin pérdida y tablero | `docs/fases/FASE_7.md` |
 | 6 | Transferencias entre bodegas con una Saga orquestada | `docs/fases/FASE_6.md` |
 | — | Reportes con Athena (S3 + Glue + Athena) | `docs/fases/REPORTES_ATHENA.md` |
+| — | Prueba completa en AWS Learner Lab | `docs/fases/PRUEBA_AWS.md` |
 
 La Fase 7 va antes que la 6 porque las transferencias (Saga) las orquesta la central.
 
