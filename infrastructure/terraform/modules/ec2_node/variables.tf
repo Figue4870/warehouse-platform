@@ -36,3 +36,12 @@ variable "private_ip" {
   type        = string
   default     = null
 }
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+variable "log_group" {
+  description = "Grupo de CloudWatch Logs donde Docker manda los logs de los contenedores (vacío = solo en la máquina)"
+  type        = string
+  default     = ""
+}

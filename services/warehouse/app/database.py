@@ -7,13 +7,22 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
 # pool_pre_ping: antes de usar una conexión del pool verifica que siga viva.
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# pool_timeout corto: con el pool agotado es mejor responder 503 rápido que acumular peticiones.
+_pool = {} if settings.DATABASE_URL.startswith("sqlite") else {
+    "pool_size": settings.DB_POOL_SIZE, "max_overflow": settings.DB_MAX_OVERFLOW, "pool_timeout": settings.DB_POOL_TIMEOUT_SECONDS}
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, **_pool)
+# expire_on_commit=False: después del commit no se vuelve a consultar la base para leer lo que ya se tiene
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 Base = declarative_base()
 
 
-def get_db():
-    """Dependencia de FastAPI: una sesión de base de datos por request."""
+async def get_db():
+    """Dependencia de FastAPI: una sesión de base de datos por request.
+
+    Es async para que el cierre (devolver la conexión al pool) corra en el event loop. Si fuera síncrona, el
+    cierre esperaría un hilo libre del threadpool; bajo carga alta todos los hilos esperan conexiones que solo
+    ese cierre libera y la API se bloquea (hallazgo de la Fase 11).
+    """
     db = SessionLocal()
     try:
         yield db

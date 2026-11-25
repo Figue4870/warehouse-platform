@@ -55,8 +55,10 @@ def outbox_stats(db: Session) -> dict:
     }
 
 
-@router.get("/metrics", summary="Métricas: caché (Fase 2) y outbox de eventos (Fase 3)")
+@router.get("/metrics", summary="Métricas: caché (Fase 2), outbox (Fase 3) y peticiones HTTP de esta instancia (Fase 11)")
 def metrics(cache: InventoryCache = Depends(get_inventory_cache), db: Session = Depends(get_db)):
+    from app.modules.metrics.metrics_controller import registry
+
     return {
         "warehouse_id": settings.WAREHOUSE_ID,
         "instance": settings.INSTANCE_NAME,
@@ -64,6 +66,7 @@ def metrics(cache: InventoryCache = Depends(get_inventory_cache), db: Session = 
         "sql_queries_total": sql_query_counter.value,
         "cache": cache.stats(),
         "outbox": outbox_stats(db),
+        "http": registry.summary(),
     }
 
 

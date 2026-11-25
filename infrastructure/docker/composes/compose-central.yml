@@ -7,9 +7,11 @@ x-central: &central
     context: ../../../services
     dockerfile: central/Dockerfile
   environment: &central-env
-    DATABASE_URL: postgresql://${CENTRAL_DB_USER:-postgres}:${CENTRAL_DB_PASSWORD:-postgres}@central_postgres:5432/${CENTRAL_DB_NAME:-central_db}
+    # En AWS la base es RDS (CENTRAL_DATABASE_URL); en local, el contenedor central_postgres (perfil db-local)
+    DATABASE_URL: ${CENTRAL_DATABASE_URL:-postgresql://${CENTRAL_DB_USER:-postgres}:${CENTRAL_DB_PASSWORD:-postgres}@central_postgres:5432/${CENTRAL_DB_NAME:-central_db}}
     AUTO_CREATE_TABLES: "false"
-    AMQP_URL: amqp://${CENTRAL_RABBIT_USER:-platform}:${CENTRAL_RABBIT_PASSWORD:-platform}@central_rabbitmq:5672/%2F
+    # Un nodo adicional de la API llega al RabbitMQ y al directorio del nodo principal por la red privada
+    AMQP_URL: ${CENTRAL_AMQP_URL:-amqp://${CENTRAL_RABBIT_USER:-platform}:${CENTRAL_RABBIT_PASSWORD:-platform}@central_rabbitmq:5672/%2F}
     ONLINE_AFTER_SECONDS: ${ONLINE_AFTER_SECONDS:-45}
     WAREHOUSE_API_URLS: ${WAREHOUSE_API_URLS:-}
     # Heartbeat cifrado: cada cuánto pregunta y la clave de cada bodega
@@ -59,6 +61,7 @@ services:
   central_postgres:
     image: postgres:15-alpine
     container_name: central_postgres
+    profiles: ["db-local"]
     environment:
       POSTGRES_USER: ${CENTRAL_DB_USER:-postgres}
       POSTGRES_PASSWORD: ${CENTRAL_DB_PASSWORD:-postgres}
@@ -130,12 +133,13 @@ services:
     container_name: central_api
     environment:
       <<: *central-env
-      INSTANCE_NAME: central-api
+      INSTANCE_NAME: ${CENTRAL_INSTANCE_NAME:-central-api}
     ports:
       - "${CENTRAL_PORT:-8090}:8000"
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
       central_ldap:
         condition: service_healthy
     healthcheck:
@@ -151,6 +155,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
       central_rabbitmq:
         condition: service_healthy
 
@@ -161,6 +166,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
 
   # Heartbeat: le pregunta a cada bodega con un reto cifrado
   central_heartbeat:
@@ -170,6 +176,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
 
   # Fase 6: Saga de transferencias
   central_saga:
@@ -179,6 +186,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
       central_rabbitmq:
         condition: service_healthy
 
@@ -189,6 +197,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
       central_rabbitmq:
         condition: service_healthy
 
@@ -200,6 +209,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
 
   # Fase 8: reporte diario de todas las bodegas (23:00, reejecutable desde /batch/runs)
   central_batch:
@@ -209,6 +219,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
 
   # Envíos con Servientrega dentro de la Saga
   central_shipping:
@@ -218,6 +229,7 @@ services:
     depends_on:
       central_postgres:
         condition: service_healthy
+        required: false
 
   # Fase 9: el mismo código de la Lambda, disparado por los archivos nuevos de s3-local/ (con S3 queda sin trabajo)
   lambda_local:

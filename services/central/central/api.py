@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from platform_common.correlation import new_correlation_id, reset_correlation_id, set_correlation_id
+from platform_common.metrics import instrument_fastapi
 from sqlalchemy.exc import OperationalError
 
 from central import models  # noqa: F401 - registra las tablas
@@ -23,6 +24,7 @@ from central.routers import (
     global_inventory,
     health,
     integrations,
+    metrics,
     notifications,
     product_requests,
     reports,
@@ -74,6 +76,9 @@ async def correlation_id_middleware(request: Request, call_next):
     return response
 
 
+instrument_fastapi(app, metrics.registry)
+
+
 @app.exception_handler(OperationalError)
 async def database_unavailable(request: Request, exc: OperationalError):
     logger.error("Base de datos central no disponible", extra={"event": "database_unavailable"})
@@ -92,6 +97,7 @@ def root():
 
 
 app.include_router(health.router)
+app.include_router(metrics.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(catalog.router)

@@ -11,9 +11,9 @@ data "aws_subnet" "nodes" {
   default_for_az    = true
 }
 
-# Segunda zona, solo para el ALB (AWS exige subredes en al menos dos zonas)
+# Segunda zona, para los ALB y el RDS (AWS exige subredes en al menos dos zonas)
 data "aws_subnet" "second_zone" {
-  count             = length(local.load_balanced) > 0 ? 1 : 0
+  count             = length(local.load_balanced) > 0 || var.central_database == "rds" || var.central_api_nodes > 0 ? 1 : 0
   vpc_id            = data.aws_vpc.default.id
   availability_zone = var.second_availability_zone
   default_for_az    = true
@@ -125,7 +125,10 @@ module "central" {
   root_volume_size_gb   = var.root_volume_size_gb
   repo_url              = var.repo_url
   repo_branch           = var.repo_branch
+  aws_region            = var.aws_region
+  log_group             = lookup(local.log_groups, "central", "")
   runtime_env = merge({
+    CENTRAL_INSTANCE_NAME    = "central-api-1"
     CENTRAL_PORT             = var.central_port
     CENTRAL_RABBIT_PORT      = var.central_rabbit_port
     CENTRAL_RABBIT_MGMT_PORT = var.central_rabbit_mgmt_port
@@ -136,7 +139,14 @@ module "central" {
     WAREHOUSE_HEARTBEAT_SECRETS = join(",", [for key, wh in var.warehouses : "${wh.wh_id}=${local.heartbeat_secrets[key]}"])
     LAMBDA_SHARED_SECRET        = local.lambda_secret
     SERVIENTREGA_WEBHOOK_SECRET = local.servientrega_secret
-    }, local.lambda_enabled ? {
+    # Directorio de usuarios: clave del administrador y de los usuarios iniciales (terraform output initial_password)
+    LDAP_ADMIN_PASSWORD = local.ldap_admin_password
+    LDAP_SEED_PASSWORD  = local.initial_password
+    LDAP_PORT           = var.central_ldap_port
+    }, local.central_rds ? {
+    # Base de la central en RDS: manage_warehouse.sh crea las tablas y no levanta el contenedor de PostgreSQL
+    CENTRAL_DATABASE_URL = local.central_database_url
+    } : {}, local.lambda_enabled ? {
     LAMBDA_FUNCTION_ARN = local.lambda_arn
     } : {}, var.enable_analytics ? {
     # El exportador sube los datos a S3 y la API ejecuta los reportes en Athena (con LabRole, sin llaves)
@@ -162,6 +172,8 @@ module "warehouse" {
   root_volume_size_gb   = var.root_volume_size_gb
   repo_url              = var.repo_url
   repo_branch           = var.repo_branch
+  aws_region            = var.aws_region
+  log_group             = lookup(local.log_groups, each.key, "")
   runtime_env = {
     # Los eventos de la bodega viajan al RabbitMQ central por la red privada de la VPC
     CENTRAL_AMQP_URL = "amqp://platform:${var.central_rabbit_password}@${local.central_private_ip}:${var.central_rabbit_port}/%2F"
@@ -191,6 +203,8 @@ module "api_node" {
   root_volume_size_gb   = var.root_volume_size_gb
   repo_url              = var.repo_url
   repo_branch           = var.repo_branch
+  aws_region            = var.aws_region
+  log_group             = lookup(local.log_groups, each.value.warehouse, "")
   runtime_env = {
     PRIMARY_HOST     = module.warehouse[each.value.warehouse].private_ip
     NODE_NAME        = "nodo${each.value.number}"
@@ -226,6 +240,21 @@ module "storage_lambda" {
   role_arn      = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.lambda_role_name}"
   bucket        = module.analytics[0].bucket
   account_id    = data.aws_caller_identity.current.account_id
-  central_url   = "http://${module.central.public_ip}:${var.central_port}"
+  # Con ALB la Lambda avisa por su DNS, que no cambia si se reinicia una máquina
+  central_url   = local.central_has_alb ? "http://${module.central_load_balancer[0].dns_name}:${var.central_port}" : "http://${module.central.public_ip}:${var.central_port}"
   shared_secret = local.lambda_secret
+}
+
+# El Learner Lab permite como máximo 9 instancias a la vez
+resource "terraform_data" "learner_lab_limits" {
+  lifecycle {
+    precondition {
+      condition     = 1 + var.central_api_nodes + length(var.warehouses) + length(local.api_nodes) <= 9
+      error_message = "Se superan las 9 instancias del Learner Lab (central y sus nodos + bodegas + nodos de API)."
+    }
+    precondition {
+      condition     = var.central_api_nodes == 0 || var.central_database == "rds"
+      error_message = "Los nodos adicionales de la API central comparten la base: requieren central_database = \"rds\"."
+    }
+  }
 }

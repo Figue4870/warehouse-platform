@@ -14,6 +14,9 @@ mock_provider "aws" {
   mock_resource "aws_lambda_function" {
     defaults = { arn = "arn:aws:lambda:us-east-1:123456789012:function:warehouse-platform-storage-processor" }
   }
+  mock_resource "aws_db_instance" {
+    defaults = { address = "warehouse-platform-central.c0prueba.us-east-1.rds.amazonaws.com" }
+  }
   mock_resource "aws_lb_target_group" {
     defaults = { arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/wh-002-api/0abc" }
   }
@@ -145,6 +148,113 @@ run "sin_analytics_no_hay_lambda" {
     condition     = output.lambda == null && !strcontains(module.central.user_data, "LAMBDA_FUNCTION_ARN")
     error_message = "Sin bucket no se crea la Lambda ni se le pasa a la central."
   }
+}
+
+
+run "central_con_rds_y_dos_nodos_detras_del_alb" {
+  command = apply
+
+  assert {
+    condition = (
+      length(aws_db_instance.central) == 1 && aws_db_instance.central[0].instance_class == "db.t3.micro" &&
+      !aws_db_instance.central[0].publicly_accessible && aws_db_instance.central[0].storage_encrypted
+    )
+    error_message = "La central debe tener un RDS db.t3.micro privado y cifrado."
+  }
+  assert {
+    condition     = strcontains(module.central.user_data, "CENTRAL_DATABASE_URL=postgresql://central:${substr(sha256("secreto-de-prueba-0123456789:rds"), 0, 32)}@warehouse-platform-central.c0prueba.us-east-1.rds.amazonaws.com:5432/central_db")
+    error_message = "La central debe usar el RDS con la clave derivada del secreto maestro."
+  }
+  assert {
+    condition = (
+      length(module.central_api_node) == 1 &&
+      strcontains(module.central_api_node[0].user_data, "manage_warehouse.sh start-api central") &&
+      strcontains(module.central_api_node[0].user_data, "CENTRAL_INSTANCE_NAME=central-api-2") &&
+      strcontains(module.central_api_node[0].user_data, "CENTRAL_AMQP_URL=amqp://platform:clave-de-prueba@172.31.0.200:5680/%2F") &&
+      strcontains(module.central_api_node[0].user_data, "LDAP_URL=ldap://172.31.0.200:3890") &&
+      strcontains(module.central_api_node[0].user_data, "CENTRAL_DATABASE_URL=postgresql://central:")
+    )
+    error_message = "El segundo nodo debe levantar solo la API y usar el RDS, el RabbitMQ y el directorio del nodo principal."
+  }
+  assert {
+    condition     = length(module.central_load_balancer) == 1 && strcontains(output.central.dashboard, "elb.amazonaws.com:8090/dashboard")
+    error_message = "El tablero de la central debe entrar por su ALB."
+  }
+  assert {
+    condition = (
+      strcontains(module.central.user_data, "LDAP_ADMIN_PASSWORD=${substr(sha256("secreto-de-prueba-0123456789:ldap"), 0, 32)}") &&
+      strcontains(module.central.user_data, "LDAP_SEED_PASSWORD=Bodegas-${substr(sha256("secreto-de-prueba-0123456789:usuarios"), 0, 12)}") &&
+      !strcontains(module.warehouse["wh_001"].user_data, "LDAP_ADMIN_PASSWORD")
+    )
+    error_message = "Solo la central recibe las claves del directorio, derivadas del secreto maestro."
+  }
+}
+
+run "central_en_contenedor_sin_alb" {
+  command = plan
+  variables {
+    central_database  = "contenedor"
+    central_api_nodes = 0
+  }
+
+  assert {
+    condition = (
+      length(aws_db_instance.central) == 0 && output.central.load_balancer == null &&
+      !strcontains(module.central.user_data, "CENTRAL_DATABASE_URL")
+    )
+    error_message = "Con central_database = contenedor no hay RDS ni ALB de la central."
+  }
+}
+
+run "nodos_de_la_central_requieren_rds" {
+  command = plan
+  variables {
+    central_database  = "contenedor"
+    central_api_nodes = 1
+  }
+  expect_failures = [terraform_data.learner_lab_limits]
+}
+
+run "logs_de_cada_maquina_en_cloudwatch" {
+  command = apply
+
+  assert {
+    condition     = length(aws_cloudwatch_log_group.nodes) == 5 && aws_cloudwatch_log_group.nodes["wh_001"].retention_in_days == 7
+    error_message = "Debe haber un grupo de logs por máquina (central, nodo de la central y 3 bodegas) con 7 días."
+  }
+  assert {
+    condition = (
+      strcontains(module.warehouse["wh_001"].user_data, "\"awslogs-group\": \"/warehouse-platform/WH-001\"") &&
+      strcontains(module.api_node["wh_002-2"].user_data, "\"awslogs-group\": \"/warehouse-platform/WH-002\"") &&
+      strcontains(module.central_api_node[0].user_data, "\"awslogs-group\": \"/warehouse-platform/central-api\"")
+    )
+    error_message = "Docker debe mandar los logs de cada máquina a su grupo (el nodo de WH-002 al de WH-002)."
+  }
+}
+
+run "sin_cloudwatch_los_logs_quedan_en_la_maquina" {
+  command = plan
+  variables {
+    cloudwatch_logs = false
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_log_group.nodes) == 0 && !strcontains(module.central.user_data, "awslogs")
+    error_message = "Con cloudwatch_logs = false no se crean grupos ni se cambia el driver de Docker."
+  }
+}
+
+run "cuenta_los_nodos_de_la_central_en_el_limite" {
+  command = plan
+  variables {
+    central_api_nodes = 2
+    warehouses = {
+      wh_001 = { wh_id = "WH-001", api_port = 8001, web_port = 8081, rabbit_mgmt_port = 15673, api_nodes = 2 }
+      wh_002 = { wh_id = "WH-002", api_port = 8002, web_port = 8082, rabbit_mgmt_port = 15674, api_nodes = 2 }
+      wh_003 = { wh_id = "WH-003", api_port = 8003, web_port = 8083, rabbit_mgmt_port = 15675 }
+    }
+  }
+  expect_failures = [terraform_data.learner_lab_limits]
 }
 
 run "rechaza_maquinas_fuera_del_learner_lab" {

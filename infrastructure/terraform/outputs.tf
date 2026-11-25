@@ -17,14 +17,32 @@ output "warehouses" {
 }
 
 output "central" {
-  description = "Plataforma central (Fase 7)"
+  description = "Plataforma central (Fase 7). Con ALB, el tablero y la API se usan por su DNS"
   value = {
-    public_ip  = module.central.public_ip
-    private_ip = module.central.private_ip
-    api_docs   = "http://${module.central.public_ip}:${var.central_port}/docs"
-    rabbitmq   = "http://${module.central.public_ip}:${var.central_rabbit_mgmt_port}"
-    ssh        = "ssh -i labsuser.pem ubuntu@${module.central.public_ip}"
+    dashboard     = local.central_has_alb ? "http://${module.central_load_balancer[0].dns_name}:${var.central_port}/dashboard" : "http://${module.central.public_ip}:${var.central_port}/dashboard"
+    api_docs      = local.central_has_alb ? "http://${module.central_load_balancer[0].dns_name}:${var.central_port}/docs" : "http://${module.central.public_ip}:${var.central_port}/docs"
+    load_balancer = local.central_has_alb ? "http://${module.central_load_balancer[0].dns_name}:${var.central_port}" : null
+    public_ip     = module.central.public_ip
+    private_ip    = module.central.private_ip
+    api_nodes     = [for node in module.central_api_node : node.public_ip]
+    database      = local.central_rds ? "RDS ${aws_db_instance.central[0].address} (${var.central_db_instance_class})" : "contenedor en la máquina de la central"
+    rabbitmq      = "http://${module.central.public_ip}:${var.central_rabbit_mgmt_port}"
+    ssh           = "ssh -i labsuser.pem ubuntu@${module.central.public_ip}"
   }
+}
+
+output "initial_password" {
+  description = "Contraseña de los usuarios iniciales del directorio (admin.global, lider, admin.wh00X, registrador.wh00X): terraform output -raw initial_password"
+  value       = local.initial_password
+  sensitive   = true
+}
+
+output "cloudwatch_logs" {
+  description = "Grupos de CloudWatch Logs de cada máquina (un stream por contenedor)"
+  value = var.cloudwatch_logs ? {
+    groups   = values(local.log_groups)
+    insights = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:logs-insights"
+  } : null
 }
 
 output "analytics" {

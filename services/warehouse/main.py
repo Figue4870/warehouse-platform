@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from platform_common.correlation import new_correlation_id, reset_correlation_id, set_correlation_id
+from platform_common.metrics import instrument_fastapi
 
 from app.config import settings
 from app.database import Base, engine
@@ -15,6 +17,8 @@ from app.modules.alerts.alerts_controller import router as alerts_controller
 from app.modules.catalog.catalog_controller import router as catalog_controller
 from app.modules.health.health_controller import router as health_controller
 from app.modules.inventory.inventory_controller import router as inventory_controller
+from app.modules.metrics.metrics_controller import registry as metrics_registry
+from app.modules.metrics.metrics_controller import router as metrics_controller
 from app.modules.products.products_controller import router as products_controller
 from app.modules.reports.reports_controller import router as reports_controller
 from app.modules.requests.requests_controller import router as requests_controller
@@ -74,11 +78,21 @@ async def correlation_id_middleware(request: Request, call_next):
     return response
 
 
+instrument_fastapi(app, metrics_registry)
+
+
 @app.exception_handler(OperationalError)
 async def database_unavailable_handler(request: Request, exc: OperationalError):
     # PostgreSQL caído o inalcanzable: 503 = "servicio no disponible, intenta más tarde"
     logger.error("Base de datos no disponible", extra={"event": "database_unavailable", "context": {"path": request.url.path}})
     return JSONResponse(status_code=503, content={"detail": "Base de datos no disponible, intenta más tarde"})
+
+
+@app.exception_handler(PoolTimeoutError)
+async def pool_exhausted_handler(request: Request, exc: PoolTimeoutError):
+    # Todas las conexiones ocupadas: rechazar rápido (el cliente reintenta) en vez de encolar sin límite
+    logger.warning("Sin conexiones libres a la base", extra={"event": "db_pool_exhausted", "context": {"path": request.url.path}})
+    return JSONResponse(status_code=503, content={"detail": "Bodega saturada, intenta de nuevo"}, headers={"Retry-After": "1"})
 
 
 @app.exception_handler(Exception)
@@ -89,6 +103,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(health_controller)
+app.include_router(metrics_controller)
 app.include_router(products_controller)
 app.include_router(catalog_controller)
 app.include_router(requests_controller)

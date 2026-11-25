@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.orm import Session
 
 from app.cache import InventoryCache, MISS, get_inventory_cache
@@ -91,6 +92,8 @@ class InventoryService:
         if not inventory:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventario no encontrado")
         data = InventoryResponse.model_validate(inventory).model_dump(mode="json")
+        # Fase 11: termina la transacción de lectura y devuelve la conexión al pool ya, no al cerrar la petición
+        self.db.rollback()
 
         # 3) Guardar en Redis con TTL para las próximas lecturas
         if lookup.status == MISS:
@@ -255,8 +258,8 @@ class InventoryService:
             self.db.rollback()
             logger.exception("La base de datos rechazó el movimiento", extra={"event": "movement_integrity_error"})
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La base de datos rechazó la operación")
-        except OperationalError:
-            # PostgreSQL caído: main.py lo convierte en HTTP 503
+        except (OperationalError, PoolTimeoutError):
+            # PostgreSQL caído o sin conexiones libres: main.py lo convierte en HTTP 503
             self.db.rollback()
             raise
         except Exception:

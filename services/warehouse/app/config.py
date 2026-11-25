@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Fase 5: nombre de ESTA copia de la API (api-1, api-2, api-3). Si no se da, el hostname.
     INSTANCE_NAME: str = socket.gethostname()
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/warehouse_db"
+    DB_POOL_SIZE: int = 5               # por instancia de la API: 6 APIs (WH-002) + workers caben en las 100 conexiones de PostgreSQL
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_TIMEOUT_SECONDS: float = 5.0
     # True  -> la API crea las tablas al arrancar (útil corriendo sin Docker).
     # False -> las tablas las crea infrastructure/db/schema.sql (así está en Docker).
     AUTO_CREATE_TABLES: bool = True
@@ -28,6 +31,7 @@ class Settings(BaseSettings):
 
     # Fase 3: RabbitMQ, outbox y workers
     AMQP_URL: str = "amqp://warehouse:warehouse@localhost:5672/%2F"
+    RABBITMQ_MANAGEMENT_URL: str | None = None  # métricas de las colas; vacío = mismo host que AMQP_URL, puerto 15672
     OUTBOX_BATCH_SIZE: int = 100            # eventos que el relay publica por vuelta
     OUTBOX_POLL_SECONDS: float = 0.5        # cada cuánto revisa el relay si hay pendientes
     OUTBOX_RETENTION_DAYS: int = 30         # días que se guardan los eventos ya publicados

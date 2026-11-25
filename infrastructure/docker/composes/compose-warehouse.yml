@@ -18,6 +18,8 @@ x-backend: &backend
     AUTH_ENABLED: ${AUTH_ENABLED:-true}
     CENTRAL_API_URL: ${CENTRAL_API_URL:-http://central_api:8000}
     CATALOG_STRICT: ${CATALOG_STRICT:-true}
+    # Fase 11: con más peticiones en curso que este límite, la API responde 503 de inmediato en vez de encolar
+    UVICORN_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-120}
   restart: unless-stopped
 
 x-api: &api

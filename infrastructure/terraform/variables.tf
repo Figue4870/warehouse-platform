@@ -128,6 +128,59 @@ variable "central_rabbit_password" {
   }
 }
 
+# Base de la central: RDS (administrada) o un contenedor en la máquina de la central
+variable "central_database" {
+  description = "rds: Amazon RDS PostgreSQL (recomendado en AWS); contenedor: PostgreSQL en la máquina de la central."
+  type        = string
+  default     = "rds"
+
+  validation {
+    condition     = contains(["rds", "contenedor"], var.central_database)
+    error_message = "central_database debe ser rds o contenedor."
+  }
+}
+
+variable "central_db_instance_class" {
+  description = "Tamaño del RDS de la central. db.t3.micro alcanza para el modelo de lectura."
+  type        = string
+  default     = "db.t3.micro"
+
+  validation {
+    condition     = can(regex("^db\\.t[34]g?\\.(micro|small)$", var.central_db_instance_class))
+    error_message = "Usa db.t3.micro, db.t3.small, db.t4g.micro o db.t4g.small (Learner Lab)."
+  }
+}
+
+variable "central_api_nodes" {
+  description = "Nodos adicionales de la API central detrás de un ALB (0 = una sola máquina, sin ALB). Requieren RDS."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.central_api_nodes >= 0 && var.central_api_nodes <= 2
+    error_message = "central_api_nodes debe estar entre 0 y 2."
+  }
+}
+
+variable "central_ldap_port" {
+  description = "Puerto del directorio LDAP de la central (solo desde los nodos de la API central)."
+  type        = number
+  default     = 3890
+}
+
+# CloudWatch Logs
+variable "cloudwatch_logs" {
+  description = "Mandar los logs de los contenedores de cada máquina a CloudWatch Logs."
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "Días que CloudWatch guarda los logs."
+  type        = number
+  default     = 7
+}
+
 # heartbeat
 variable "heartbeat_secret" {
   description = "Secreto del que se derivan las claves del heartbeat de cada bodega. No se copia a ninguna máquina."
