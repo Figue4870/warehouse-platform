@@ -8,7 +8,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-def get_db():
+async def get_db():
+    """Async: el cierre devuelve la conexión al pool sin esperar un hilo libre del threadpool (Fase 11)."""
     db = SessionLocal()
     try:
         yield db

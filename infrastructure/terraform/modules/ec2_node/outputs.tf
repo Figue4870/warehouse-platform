@@ -15,3 +15,9 @@ output "user_data" {
   value       = aws_instance.this.user_data
   sensitive   = true
 }
+
+output "runtime_env" {
+  description = "Variables de la máquina: un nodo adicional de la misma pieza parte de ellas"
+  value       = var.runtime_env
+  sensitive   = true
+}

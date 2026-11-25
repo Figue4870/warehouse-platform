@@ -10,11 +10,12 @@ from platform_common.auth import ADMIN_GLOBAL
 from central import models  # noqa: F401
 from central.config import settings
 from central.database import SessionLocal
-from central.heartbeat import OK, HeartbeatClient, full_registry, poll_once
+from central.heartbeat import NO_SECRET, OK, REJECTED, UNREACHABLE, HeartbeatClient, full_registry, poll_once
 from central.logging_config import setup_logging
 from central.notifications import CRITICAL, INFO, notify
 
 logger = logging.getLogger("central.heartbeat")
+PROBLEM = {UNREACHABLE: "no responde", REJECTED: "respondió sin autenticarse", NO_SECRET: "no tiene clave de heartbeat configurada"}
 
 
 def notify_change(result, previous) -> None:
@@ -26,7 +27,7 @@ def notify_change(result, previous) -> None:
             notify(db, ADMIN_GLOBAL, "WAREHOUSE_RECOVERED", f"{result.warehouse_id} volvió a responder", "", INFO,
                    result.warehouse_id)
         else:
-            notify(db, ADMIN_GLOBAL, "WAREHOUSE_UNHEALTHY", f"{result.warehouse_id}: {result.outcome}", result.detail,
+            notify(db, ADMIN_GLOBAL, "WAREHOUSE_UNHEALTHY", f"{result.warehouse_id} {PROBLEM.get(result.outcome, result.outcome)}", result.detail,
                    CRITICAL, result.warehouse_id)
         db.commit()
 

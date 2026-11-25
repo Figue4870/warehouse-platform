@@ -1,0 +1,29 @@
+# Cada API expone /metrics/prometheus. Las bodegas tienen tres instancias: se lee cada una por su contenedor
+# (por el balanceador, cada lectura caería en una instancia distinta y los contadores no tendrían sentido).
+global:
+  scrape_interval: 5s
+  scrape_timeout: 4s
+
+scrape_configs:
+  - job_name: central
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets: ["central_api:8000"]
+        labels: {component: central}
+
+  - job_name: bodegas
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets: ["warehouse_api_1_WH-001:8000", "warehouse_api_2_WH-001:8000", "warehouse_api_3_WH-001:8000"]
+        labels: {warehouse: WH-001}
+      - targets: ["warehouse_api_1_WH-002:8000", "warehouse_api_2_WH-002:8000", "warehouse_api_3_WH-002:8000"]
+        labels: {warehouse: WH-002}
+      - targets: ["warehouse_api_1_WH-003:8000", "warehouse_api_2_WH-003:8000", "warehouse_api_3_WH-003:8000"]
+        labels: {warehouse: WH-003}
+    relabel_configs:
+      # instance = WH-001-api-1 en lugar de warehouse_api_1_WH-001:8000
+      - source_labels: [__address__]
+        regex: "warehouse_api_(\\d)_(WH-\\d+):8000"
+        target_label: instance
+        replacement: "${2}-api-${1}"
+

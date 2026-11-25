@@ -3,6 +3,7 @@
 
    .\manage.ps1 start central        -> levanta la plataforma central (Fase 7)
    .\manage.ps1 start wh_001         -> levanta una bodega ("all" = central + todas)
+   .\manage.ps1 start obs            -> Prometheus (http://localhost:9090) y Grafana (http://localhost:3000)
    .\manage.ps1 stop wh_002          -> la apaga SIN borrar datos (o "all")
    .\manage.ps1 restart wh_001
    .\manage.ps1 reset wh_001         -> la apaga y BORRA sus datos (volúmenes)
@@ -21,6 +22,7 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 $WarehouseCompose = "infrastructure/docker/composes/compose-warehouse.yml"
 $CentralCompose = "infrastructure/docker/composes/compose-central.yml"
+$ObsCompose = "infrastructure/docker/composes/compose-observabilidad.yml"
 $PlatformNetwork = "warehouse_platform"
 
 function Initialize-Network {
@@ -35,12 +37,18 @@ function Get-Warehouses {
 
 function Invoke-WarehouseCompose([string]$Warehouse, [string[]]$ComposeArgs) {
     $envFile = "infrastructure/docker/components/$Warehouse/.env"
-    if (-not (Test-Path $envFile)) { throw "No existe $envFile (bodegas: $((Get-Warehouses) -join ', '))" }
+    if ($Warehouse -ne "obs" -and -not (Test-Path $envFile)) { throw "No existe $envFile (bodegas: $((Get-Warehouses) -join ', '))" }
     $dockerArgs = @("compose", "--env-file", $envFile)
     $runtimeEnv = "infrastructure/docker/components/$Warehouse/runtime.env"
     if (Test-Path $runtimeEnv) { $dockerArgs += @("--env-file", $runtimeEnv) }
     if ($Warehouse -eq "central") {
         $dockerArgs += @("-f", $CentralCompose, "-p", "central")
+        # Base de la central en contenedor, salvo que runtime.env apunte a RDS
+        if (-not ((Test-Path $runtimeEnv) -and (Select-String -Path $runtimeEnv -Pattern "^CENTRAL_DATABASE_URL=" -Quiet))) {
+            $dockerArgs += @("--profile", "db-local")
+        }
+    } elseif ($Warehouse -eq "obs") {
+        $dockerArgs = @("compose", "-f", $ObsCompose, "-p", "obs")
     } else {
         $dockerArgs += @("-f", $WarehouseCompose, "-p", ($Warehouse -replace "_", "-"))
     }
@@ -70,6 +78,6 @@ switch ($Action) {
         if ($Service) { $logArgs += $Service }
         Invoke-WarehouseCompose $Target $logArgs
     }
-    "list"    { "central"; Get-Warehouses }
-    default   { Get-Content $PSCommandPath -TotalCount 18 | Select-Object -Skip 2 }
+    "list"    { "central"; Get-Warehouses; "obs" }
+    default   { Get-Content $PSCommandPath -TotalCount 19 | Select-Object -Skip 2 }
 }

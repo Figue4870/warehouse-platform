@@ -15,6 +15,8 @@ resource "aws_instance" "this" {
     repo_url    = var.repo_url
     repo_branch = var.repo_branch
     runtime_env = var.runtime_env
+    aws_region  = var.aws_region
+    log_group   = var.log_group
   })
   user_data_replace_on_change = true
 

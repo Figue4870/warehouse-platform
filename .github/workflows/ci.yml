@@ -30,7 +30,9 @@ jobs:
             docker compose --env-file "$env" -f infrastructure/docker/composes/compose-warehouse.yml -p ci config -q
           done
       - name: Compose de la central (Fase 7)
-        run: docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central config -q
+        run: docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central --profile db-local config -q
+      - name: Compose de Prometheus y Grafana (Fase 11)
+        run: docker compose -f infrastructure/docker/composes/compose-observabilidad.yml -p obs config -q
       - name: Compose de un nodo de API (WH-002)
         run: PRIMARY_HOST=10.0.0.10 CENTRAL_API_URL=http://10.0.0.200:8090 docker compose --env-file infrastructure/docker/components/wh_002/.env -f infrastructure/docker/composes/compose-warehouse-api.yml -p ci-api config -q
       - name: Configuración del balanceador
@@ -57,7 +59,7 @@ jobs:
       - name: Red compartida bodegas <-> central (Fase 7)
         run: docker network create warehouse_platform
       - name: Construir y levantar la central (Fase 7)
-        run: docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central up -d --build --wait --wait-timeout 300
+        run: docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central --profile db-local up -d --build --wait --wait-timeout 300
       - name: Construir y levantar WH-001 (espera a que todo esté healthy)
         run: docker compose -f basic-docker-compose.yml up -d --build --wait --wait-timeout 300
       - name: Levantar WH-002 (destino de la transferencia de prueba, Fase 6)
@@ -69,15 +71,25 @@ jobs:
           API_URL_2: http://localhost:8002
           REDIS_URL: redis://localhost:6380/0
           CENTRAL_URL: http://localhost:8090
+      - name: Pruebas de fallos (Fase 10)
+        run: pytest tests/failure -q
+        env:
+          FAILURE_TESTS: "1"
+          API_URL: http://localhost:8001
+          API_URL_2: http://localhost:8002
+          CENTRAL_URL: http://localhost:8090
+          WH_AMQP_URL: amqp://warehouse:warehouse@localhost:5673/%2F
+          CENTRAL_AMQP_URL: amqp://platform:platform@localhost:5680/%2F
+          EXTERNAL_MOCKS_URL: http://localhost:8099
       - name: Logs si algo falló
         if: failure()
         run: |
           docker compose -f basic-docker-compose.yml logs --tail 80
           docker compose --env-file infrastructure/docker/components/wh_002/.env -f infrastructure/docker/composes/compose-warehouse.yml -p wh-002 logs --tail 40
-          docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central logs --tail 80
+          docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central --profile db-local logs --tail 80
       - name: Apagar
         if: always()
         run: |
           docker compose -f basic-docker-compose.yml down -v
           docker compose --env-file infrastructure/docker/components/wh_002/.env -f infrastructure/docker/composes/compose-warehouse.yml -p wh-002 down -v
-          docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central down -v
+          docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central --profile db-local down -v

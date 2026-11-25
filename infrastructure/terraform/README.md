@@ -1,8 +1,19 @@
 # Terraform: despliegue en AWS (Learner Lab)
 
-Crea una EC2 por bodega, una para la plataforma central, un ALB para WH-002 y los recursos de los
-reportes con Athena. Cada máquina instala Docker, clona el repositorio y levanta lo suyo con
+Crea una EC2 por bodega, dos para la plataforma central (nodo principal y un nodo de API), el RDS de
+la central, un ALB para WH-002 y otro para la central, los grupos de CloudWatch Logs y los recursos de
+los reportes con Athena. Cada máquina instala Docker, clona el repositorio y levanta lo suyo con
 `./manage_warehouse.sh start ...`.
+
+- La base de la central es un RDS PostgreSQL `db.t3.micro` privado y cifrado (`central_database =
+  "rds"`); el nodo principal crea las tablas al arrancar. Las bodegas siguen con su base en su máquina.
+- El nodo principal de la central corre RabbitMQ, el directorio LDAP, la API y los workers; el segundo
+  nodo solo la API (`start-api central`) y usa el RDS, el RabbitMQ y el directorio del principal. El
+  tablero y la API se usan por el ALB de la central (`terraform output central`).
+- Las claves del RDS y del directorio, y la contraseña de los usuarios iniciales, se derivan de
+  `heartbeat_secret`: `terraform output -raw initial_password`.
+- Docker manda los logs de cada máquina a CloudWatch Logs (`/warehouse-platform/<máquina>`, un stream
+  por contenedor, 7 días). `docker logs` sigue funcionando en la máquina.
 
 - WH-002 usa dos t3.small detrás de un ALB: el nodo principal (base de datos, Redis, RabbitMQ,
   workers, web y APIs) y un nodo de API. Su API se usa por el ALB (`terraform output` → `load_balancer`).
@@ -38,9 +49,10 @@ terraform apply      # escribir "yes"
 terraform output     # URLs de cada bodega, de la central y datos de Athena
 ```
 
-6. Esperar unos 5 minutos. Ver el avance:
+6. Esperar unos 10 minutos (el RDS tarda en crearse). Ver el avance:
    `ssh -i labsuser.pem ubuntu@<ip> "sudo tail -f /var/log/warehouse-bootstrap.log"`.
-   Luego `http://<ip-central>:8090/warehouses` debe mostrar las 3 bodegas `ONLINE`.
+   Luego el tablero (`terraform output central` → `dashboard`) debe mostrar las 3 bodegas `ONLINE`.
+   Usuarios: `admin.global`, `lider`, `admin.wh001`… con `terraform output -raw initial_password`.
 7. Al terminar: `terraform destroy`. El bucket de S3 no se borra solo: en la consola de S3,
    *Empty* y luego *Delete*.
 
@@ -60,5 +72,8 @@ Los avisos *Ignored mock/override field `private_ip`* son esperados: la central 
 - Si la IP de la central ya está en uso: `central_private_ip_host = 210` (u otro número).
 - Clave del RabbitMQ central: `central_rabbit_password = "..."`.
 - Sin Athena: `enable_analytics = false`.
+- Central en una sola máquina, sin RDS ni ALB (más barato): `central_database = "contenedor"` y
+  `central_api_nodes = 0`.
+- Sin CloudWatch: `cloudwatch_logs = false`.
 - Volver a desplegar el código de una bodega:
   `terraform apply -replace='module.warehouse["wh_001"].aws_instance.this'`.

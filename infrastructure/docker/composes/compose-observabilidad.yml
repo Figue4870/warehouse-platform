@@ -1,0 +1,39 @@
+# Fase 11 (opcional, solo local): Prometheus lee /metrics/prometheus de cada API y Grafana dibuja el tablero.
+# Se conecta a la red warehouse_platform, donde están las APIs de la central y de las bodegas.
+#   .\manage.ps1 start obs   ->  http://localhost:9090 (Prometheus) y http://localhost:3000 (Grafana)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: obs_prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d"]
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../observabilidad/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [platform]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: obs_grafana
+    environment:
+      # Solo desarrollo: el tablero se ve sin iniciar sesión; para editar, admin / GRAFANA_ADMIN_PASSWORD
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/plataforma.json
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ../observabilidad/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observabilidad/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks: [platform]
+    restart: unless-stopped
+
+networks:
+  platform:
+    name: warehouse_platform
+    external: true

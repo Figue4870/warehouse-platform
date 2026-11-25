@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5440/central_db"
     AUTO_CREATE_TABLES: bool = True               # en Docker = false (lo hace infrastructure/db/central_schema.sql)
     AMQP_URL: str = "amqp://platform:platform@localhost:5680/%2F"   # RabbitMQ CENTRAL
+    RABBITMQ_MANAGEMENT_URL: str | None = None  # métricas de las colas; vacío = mismo host que AMQP_URL, puerto 15672
     INSTANCE_NAME: str = socket.gethostname()
 
     # Una bodega sin heartbeat hace más de esto se marca OFFLINE ("datos posiblemente desactualizados")

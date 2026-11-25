@@ -15,8 +15,15 @@ repo_branch = "main"
 # Configuracion de RabbitMQ central
 central_rabbit_password = "cambiar-clave"
 
-# Heartbeat
+# Secreto maestro: de él se derivan las claves del heartbeat, del RDS, del directorio y de los avisos
 heartbeat_secret = "cambiar-secreto-heartbeat"
+
+# Central: base en RDS y un segundo nodo de la API detrás de un ALB
+# central_database  = "rds"          # o "contenedor" (sin RDS; entonces central_api_nodes = 0)
+# central_api_nodes = 1
+
+# Logs de los contenedores en CloudWatch (7 días)
+# cloudwatch_logs = true
 
 # Reportes con Athena
 # enable_analytics = true

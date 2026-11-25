@@ -8,6 +8,14 @@ apt-get update -y
 apt-get install -y docker.io docker-compose-v2 git curl
 systemctl enable --now docker
 usermod -aG docker ubuntu
+%{ if log_group != "" ~}
+
+# Logs de todos los contenedores a CloudWatch (un stream por contenedor); docker logs sigue funcionando
+cat > /etc/docker/daemon.json <<'DOCKER'
+{"log-driver": "awslogs", "log-opts": {"awslogs-region": "${aws_region}", "awslogs-group": "${log_group}", "tag": "{{.Name}}", "mode": "non-blocking"}}
+DOCKER
+systemctl restart docker
+%{ endif ~}
 
 APP_DIR=/opt/warehouse-platform
 if [ ! -d "$APP_DIR/.git" ]; then

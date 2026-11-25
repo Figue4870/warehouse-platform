@@ -17,6 +17,8 @@ x-api: &api
     AUTH_ENABLED: ${AUTH_ENABLED:-true}
     CENTRAL_API_URL: ${CENTRAL_API_URL:?CENTRAL_API_URL requerido}
     CATALOG_STRICT: ${CATALOG_STRICT:-true}
+    # Fase 11: con más peticiones en curso que este límite, la API responde 503 de inmediato en vez de encolar
+    UVICORN_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-120}
   healthcheck:
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
     interval: 10s
