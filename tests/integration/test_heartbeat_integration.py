@@ -4,18 +4,16 @@ import os
 import re
 from pathlib import Path
 
-import httpx
-import pytest
 from platform_common import secure_heartbeat as hb
 
-from test_central_integration import CENTRAL_URL, wait_until
+from it_helpers import wait_until
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def warehouse_secret() -> str:
-    """Clave de desarrollo de WH-001 (docker/components/wh_001/.env), o HEARTBEAT_SECRET si está definida."""
-    text = (ROOT / "docker" / "components" / "wh_001" / ".env").read_text(encoding="utf-8")
+    """Clave de desarrollo de WH-001 (infrastructure/docker/components/wh_001/.env), o HEARTBEAT_SECRET si está definida."""
+    text = (ROOT / "infrastructure" / "docker" / "components" / "wh_001" / ".env").read_text(encoding="utf-8")
     return os.getenv("HEARTBEAT_SECRET") or re.search(r"^HEARTBEAT_SECRET=(.+)$", text, re.M).group(1).strip()
 
 
@@ -47,14 +45,9 @@ def test_la_bodega_real_no_responde_dos_veces_el_mismo_reto(api):
     assert 409 in codes and set(codes) <= {200, 409}
 
 
-def test_la_central_le_pregunta_y_la_ve_online_verificada():
-    try:
-        httpx.get(f"{CENTRAL_URL}/health", timeout=3)
-    except httpx.HTTPError:
-        pytest.skip(f"La central no responde en {CENTRAL_URL}")
-
+def test_la_central_le_pregunta_y_la_ve_online_verificada(central):
     def verified():
-        wh = next((w for w in httpx.get(f"{CENTRAL_URL}/warehouses", timeout=5).json() if w["warehouse_id"] == "WH-001"), None)
+        wh = next((w for w in central.get("/warehouses").json() if w["warehouse_id"] == "WH-001"), None)
         return wh and wh["status"] == "ONLINE" and wh["heartbeat"]["authenticated"] and wh
 
     wh = wait_until(verified, timeout=60, what="que la central verifique a WH-001")

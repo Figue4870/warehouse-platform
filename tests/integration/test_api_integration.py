@@ -19,7 +19,7 @@ def test_salidas_concurrentes_nunca_dejan_negativo(api, api_url, new_product):
     pid = product["id"]
 
     def ship(_):
-        with httpx.Client(base_url=api_url, timeout=20) as client:
+        with httpx.Client(base_url=api_url, timeout=20, headers=dict(api.headers)) as client:
             return client.post("/inventory/movements", json={"product_id": pid, "type": "SHIPMENT", "quantity": 1}).status_code
 
     with ThreadPoolExecutor(max_workers=25) as pool:

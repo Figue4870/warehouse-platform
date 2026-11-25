@@ -19,4 +19,4 @@ terraform.tfvars
 .terraform.lock.hcl
 
 *.results.json
-docker/components/*/runtime.env
+infrastructure/docker/components/*/runtime.env

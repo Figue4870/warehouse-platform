@@ -8,9 +8,9 @@ cd "$(dirname "$0")"
 ACTION=${1:-help}
 TARGET=${2:-}
 SERVICE=${3:-}
-WAREHOUSE_COMPOSE="docker/composes/compose-warehouse.yml"
-API_NODE_COMPOSE="docker/composes/compose-warehouse-api.yml"
-CENTRAL_COMPOSE="docker/composes/compose-central.yml"
+WAREHOUSE_COMPOSE="infrastructure/docker/composes/compose-warehouse.yml"
+API_NODE_COMPOSE="infrastructure/docker/composes/compose-warehouse-api.yml"
+CENTRAL_COMPOSE="infrastructure/docker/composes/compose-central.yml"
 PLATFORM_NETWORK="warehouse_platform"
 
 # En EC2 el usuario puede no estar en el grupo docker todavía: usar sudo si hace falta
@@ -22,31 +22,31 @@ show_help() { sed -n '3,4p' "$0" | sed 's/^# \{0,1\}//'; }
 # Red compartida entre la central y las bodegas (Fase 7)
 ensure_network() { $DOCKER network inspect "$PLATFORM_NETWORK" >/dev/null 2>&1 || $DOCKER network create "$PLATFORM_NETWORK" >/dev/null; }
 
-warehouses() { for d in docker/components/wh_*/; do basename "$d"; done; }
+warehouses() { for d in infrastructure/docker/components/wh_*/; do basename "$d"; done; }
 
 compose_wh() {
     local wh=$1; shift
     if [ "$wh" = "central" ]; then compose_central "$@"; return; fi
-    local env_file="docker/components/${wh}/.env"
+    local env_file="infrastructure/docker/components/${wh}/.env"
     [ -f "$env_file" ] || { echo "Error: no existe $env_file (bodegas: $(warehouses | tr '\n' ' '))"; exit 1; }
     local args=(compose --env-file "$env_file")
-    [ -f "docker/components/${wh}/runtime.env" ] && args+=(--env-file "docker/components/${wh}/runtime.env")
+    [ -f "infrastructure/docker/components/${wh}/runtime.env" ] && args+=(--env-file "infrastructure/docker/components/${wh}/runtime.env")
     $DOCKER "${args[@]}" -f "$WAREHOUSE_COMPOSE" -p "${wh//_/-}" "$@"
 }
 
 # Nodo adicional de API de una bodega (usa PostgreSQL y Redis del nodo principal: PRIMARY_HOST)
 compose_api_node() {
     local wh=$1; shift
-    local env_file="docker/components/${wh}/.env"
+    local env_file="infrastructure/docker/components/${wh}/.env"
     [ -f "$env_file" ] || { echo "Error: no existe $env_file"; exit 1; }
     local args=(compose --env-file "$env_file")
-    [ -f "docker/components/${wh}/runtime.env" ] && args+=(--env-file "docker/components/${wh}/runtime.env")
+    [ -f "infrastructure/docker/components/${wh}/runtime.env" ] && args+=(--env-file "infrastructure/docker/components/${wh}/runtime.env")
     $DOCKER "${args[@]}" -f "$API_NODE_COMPOSE" -p "${wh//_/-}-api" "$@"
 }
 
 compose_central() {
-    local args=(compose --env-file docker/components/central/.env)
-    [ -f docker/components/central/runtime.env ] && args+=(--env-file docker/components/central/runtime.env)
+    local args=(compose --env-file infrastructure/docker/components/central/.env)
+    [ -f infrastructure/docker/components/central/runtime.env ] && args+=(--env-file infrastructure/docker/components/central/runtime.env)
     $DOCKER "${args[@]}" -f "$CENTRAL_COMPOSE" -p central "$@"
 }
 

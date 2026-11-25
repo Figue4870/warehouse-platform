@@ -10,7 +10,7 @@
    3. terraform validate + terraform test (proveedor de AWS simulado, no crea recursos)
    4. Integración con Docker (solo con -Integracion)
 
- Requisito: pip install -r src/backend/app/requirements-dev.txt
+ Requisito: pip install -r services/warehouse/requirements-dev.txt
 #>
 param(
     [switch]$Integracion
@@ -37,7 +37,7 @@ if (-not $python) {
 & $python -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Faltan librerías de Python. Ejecuta primero:" -ForegroundColor Yellow
-    Write-Host "  $python -m pip install -r src/backend/app/requirements-dev.txt"
+    Write-Host "  $python -m pip install -r services/warehouse/requirements-dev.txt"
     exit 1
 }
 
@@ -57,10 +57,10 @@ $results["Sin Docker (pytest)"] = ($LASTEXITCODE -eq 0)
 
 Write-Step "3/4 Terraform (validate + test)"
 if (Get-Command terraform -ErrorAction SilentlyContinue) {
-    terraform -chdir=terraform init -backend=false -input=false | Out-Null
-    terraform -chdir=terraform validate
+    terraform -chdir=infrastructure/terraform init -backend=false -input=false | Out-Null
+    terraform -chdir=infrastructure/terraform validate
     $valid = ($LASTEXITCODE -eq 0)
-    terraform -chdir=terraform test
+    terraform -chdir=infrastructure/terraform test
     $results["Terraform (validate + test)"] = ($valid -and $LASTEXITCODE -eq 0)
 } else {
     Write-Host "Terraform no está instalado: se omite (winget install --id Hashicorp.Terraform -e)" -ForegroundColor Yellow

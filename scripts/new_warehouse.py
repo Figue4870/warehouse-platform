@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 PORT_KEYS = ["DB_PORT", "BE_PORT", "FE_PORT", "REDIS_PORT", "RABBIT_PORT", "RABBIT_MGMT_PORT"]
-COMPONENTS = Path(__file__).resolve().parent.parent / "docker" / "components"
+COMPONENTS = Path(__file__).resolve().parent.parent / "infrastructure" / "docker" / "components"
 
 
 class WarehouseError(ValueError):
@@ -88,7 +88,7 @@ def main():
     text = env_file.read_text(encoding="utf-8")
     print(f"Creada {env_file}:")
     print("\n".join(line for line in text.splitlines() if line.split("=")[0] in PORT_KEYS + ["WH_ID"]))
-    print("Clave del heartbeat generada y agregada al registro de la central (docker/components/central/.env).")
+    print("Clave del heartbeat generada y agregada al registro de la central (infrastructure/docker/components/central/.env).")
     print("Vuelve a levantar la central para que lea la clave: .\\manage.ps1 start central")
 
 

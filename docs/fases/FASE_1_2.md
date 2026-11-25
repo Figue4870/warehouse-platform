@@ -17,7 +17,7 @@ Navegador (:8081) --/api--> API FastAPI (:8001) --> Redis (caché)
 La API tiene tres capas: **controller** (HTTP y validación), **service** (reglas de negocio y
 transacción) y **repository** (SQL con SQLAlchemy).
 
-## Modelo de datos (`db/schema.sql`)
+## Modelo de datos (`infrastructure/db/schema.sql`)
 
 | Tabla | Qué guarda |
 |---|---|
@@ -115,7 +115,7 @@ las alertas.
 docker compose -f basic-docker-compose.yml up -d --build
 docker exec db_warehouse_WH-001 psql -U postgres -d warehouse_db -v wh=WH-001 -f /db/seed.sql   # opcional
 
-pip install -r src/backend/app/requirements-dev.txt
+pip install -r services/warehouse/requirements-dev.txt
 pytest tests/unit            # sin Docker (SQLite en memoria + Redis falso)
 pytest tests/integration     # con la bodega levantada
 ```

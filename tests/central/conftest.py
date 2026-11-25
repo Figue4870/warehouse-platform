@@ -4,6 +4,7 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["AUTO_CREATE_TABLES"] = "false"
+os.environ["AUTH_ENABLED"] = "false"
 
 import itertools  # noqa: E402
 import uuid  # noqa: E402
