@@ -10,8 +10,8 @@ const MOVE_HELP = {
     RETURN: 'Suma unidades devueltas al disponible.',
     // Fase 6: las transferencias se piden en la central (POST /transfers o su tablero /dashboard);
     // la API de la bodega rechaza estos tipos con 409 para que nunca salga algo sin entrar en la otra bodega.
-    TRANSFER_IN: 'Las transferencias se piden en la central (Saga, Fase 6).',
-    TRANSFER_OUT: 'Las transferencias se piden en la central (Saga, Fase 6).',
+    TRANSFER_IN: 'Las transferencias se piden en la plataforma central.',
+    TRANSFER_OUT: 'Las transferencias se piden en la plataforma central.',
 };
 
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });

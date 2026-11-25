@@ -21,8 +21,18 @@ variable "runtime_env" {
   type        = map(string)
   default     = {}
 }
-variable "advertise_port" {
-  description = "Puerto de la API que la central usará para llamar a esta máquina por su IP privada (0 = no aplica)"
-  type        = number
-  default     = 0
+variable "role" {
+  description = "full: nodo completo; api: solo las APIs de la bodega"
+  type        = string
+  default     = "full"
+
+  validation {
+    condition     = contains(["full", "api"], var.role)
+    error_message = "role debe ser full o api."
+  }
+}
+variable "private_ip" {
+  description = "IP privada fija (null = la asigna AWS)"
+  type        = string
+  default     = null
 }

@@ -59,8 +59,8 @@ python tests/load/availability_probe.py --target WH-001=http://localhost:8001 --
 | WH-002 | 800 req/s | 596 | 78 ms | 0 |
 | WH-003 | 20 req/s | 20,1 | 22 ms | 0 |
 
-WH-002 no llegó a 800 req/s: es la que debe escalar, y se puede hacer sin tocar a las otras (por
-ejemplo, en Terraform WH-002 usa una máquina más grande, `t3.medium`).
+WH-002 no llegó a 800 req/s: es la que debe escalar, y se puede hacer sin tocar a las otras (en
+Terraform, WH-002 tiene dos t3.small detrás de un ALB).
 
 **¿Por qué no obligar a todas a escalar igual?** Se pagaría para WH-003 (20 req/s) la capacidad que
 necesita WH-002 (800 req/s). Cada bodega escala según su carga.

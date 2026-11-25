@@ -5,7 +5,12 @@ CREATE TABLE IF NOT EXISTS warehouses (
     warehouse_id           VARCHAR(20)  PRIMARY KEY,
     api_url                VARCHAR(200),
     first_seen_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    last_heartbeat_at      TIMESTAMPTZ,
+    last_heartbeat_at      TIMESTAMPTZ,                      -- última respuesta VÁLIDA al heartbeat
+    last_heartbeat_attempt_at TIMESTAMPTZ,                   -- última vez que la central preguntó
+    last_heartbeat_error   TEXT,                             -- por qué falló la última pregunta
+    heartbeat_failures     INTEGER      NOT NULL DEFAULT 0,  -- preguntas fallidas seguidas
+    heartbeat_rejections   INTEGER      NOT NULL DEFAULT 0,  -- respuestas NO auténticas (posible suplantación)
+    last_heartbeat_instance VARCHAR(60),                     -- qué copia de la API respondió
     last_event_at          TIMESTAMPTZ,
     reported_sequence      BIGINT       NOT NULL DEFAULT 0,  -- la bodega dice: publiqué hasta N
     max_received_sequence  BIGINT       NOT NULL DEFAULT 0,

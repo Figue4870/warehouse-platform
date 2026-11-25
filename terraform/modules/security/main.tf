@@ -116,3 +116,99 @@ resource "aws_vpc_security_group_ingress_rule" "api_from_central" {
   from_port                    = each.value.api_port
   to_port                      = each.value.api_port
 }
+
+# ALB y nodos adicionales de API (bodegas con varias máquinas, ej. WH-002)
+resource "aws_security_group" "alb" {
+  count       = length(var.load_balanced) > 0 ? 1 : 0
+  name        = "${var.project_name}-alb"
+  description = "ALB de las bodegas: API publica"
+  vpc_id      = var.vpc_id
+
+  tags = { Name = "${var.project_name}-alb" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_api" {
+  for_each          = var.load_balanced
+  security_group_id = aws_security_group.alb[0].id
+  description       = "API ${each.value.wh_id} por el ALB"
+  cidr_ipv4         = var.allowed_cidr
+  ip_protocol       = "tcp"
+  from_port         = each.value.api_port
+  to_port           = each.value.api_port
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_all" {
+  count             = length(var.load_balanced) > 0 ? 1 : 0
+  security_group_id = aws_security_group.alb[0].id
+  description       = "Hacia los nodos de la bodega"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+resource "aws_security_group" "api_nodes" {
+  count       = length(var.load_balanced) > 0 ? 1 : 0
+  name        = "${var.project_name}-api-nodes"
+  description = "Nodos de API: trafico desde el ALB; SSH solo admin"
+  vpc_id      = var.vpc_id
+
+  tags = { Name = "${var.project_name}-api-nodes" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "api_node_from_alb" {
+  for_each                     = var.load_balanced
+  security_group_id            = aws_security_group.api_nodes[0].id
+  description                  = "API ${each.value.wh_id} desde el ALB"
+  referenced_security_group_id = aws_security_group.alb[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value.api_port
+  to_port                      = each.value.api_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "api_node_ssh" {
+  count             = length(var.load_balanced) > 0 ? 1 : 0
+  security_group_id = aws_security_group.api_nodes[0].id
+  description       = "SSH (solo admin)"
+  cidr_ipv4         = var.admin_cidr
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
+}
+
+resource "aws_vpc_security_group_egress_rule" "api_node_all" {
+  count             = length(var.load_balanced) > 0 ? 1 : 0
+  security_group_id = aws_security_group.api_nodes[0].id
+  description       = "Salida libre"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# Nodo principal: API desde el ALB; PostgreSQL y Redis solo desde sus nodos de API
+resource "aws_vpc_security_group_ingress_rule" "api_from_alb" {
+  for_each                     = var.load_balanced
+  security_group_id            = aws_security_group.warehouses.id
+  description                  = "API ${each.value.wh_id} desde el ALB"
+  referenced_security_group_id = aws_security_group.alb[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value.api_port
+  to_port                      = each.value.api_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "db_from_api_nodes" {
+  for_each                     = var.load_balanced
+  security_group_id            = aws_security_group.warehouses.id
+  description                  = "PostgreSQL ${each.value.wh_id} desde sus nodos de API"
+  referenced_security_group_id = aws_security_group.api_nodes[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value.db_port
+  to_port                      = each.value.db_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis_from_api_nodes" {
+  for_each                     = var.load_balanced
+  security_group_id            = aws_security_group.warehouses.id
+  description                  = "Redis ${each.value.wh_id} desde sus nodos de API"
+  referenced_security_group_id = aws_security_group.api_nodes[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value.redis_port
+  to_port                      = each.value.redis_port
+}

@@ -17,7 +17,7 @@ from central.models import (
     WarehouseProductEntity,
 )
 
-APPLIED, DUPLICATE, HEARTBEAT = "applied", "duplicate", "heartbeat"
+APPLIED, DUPLICATE, IGNORED = "applied", "duplicate", "ignored"
 
 
 def now_utc() -> datetime:
@@ -64,13 +64,31 @@ def get_or_create_warehouse(db: Session, warehouse_id: str, lock: bool = False) 
     return warehouse
 
 
-def record_heartbeat(db: Session, warehouse_id: str, payload: dict) -> None:
+def record_heartbeat(db: Session, warehouse_id: str, status: dict, api_url: Optional[str] = None) -> None:
+    """Respuesta auténtica: la bodega queda en contacto y se guarda el estado que reportó."""
     warehouse = get_or_create_warehouse(db, warehouse_id, lock=True)
-    warehouse.last_heartbeat_at = now_utc()
-    warehouse.reported_sequence = max(warehouse.reported_sequence or 0, int(payload.get("last_sequence") or 0))
-    warehouse.outbox_pending = payload.get("outbox_pending")
-    if payload.get("api_url"):
-        warehouse.api_url = str(payload["api_url"]).rstrip("/")
+    now = now_utc()
+    warehouse.last_heartbeat_at = now
+    warehouse.last_heartbeat_attempt_at = now
+    warehouse.last_heartbeat_error = None
+    warehouse.heartbeat_failures = 0
+    warehouse.last_heartbeat_instance = (str(status.get("instance") or "")[:60]) or None
+    warehouse.reported_sequence = max(warehouse.reported_sequence or 0, int(status.get("last_sequence") or 0))
+    warehouse.outbox_pending = status.get("outbox_pending")
+    if api_url:
+        warehouse.api_url = api_url.rstrip("/")
+
+
+def record_heartbeat_failure(db: Session, warehouse_id: str, error: str, rejected: bool, api_url: Optional[str] = None) -> None:
+    """Consulta fallida: guarda la causa y cuenta los fallos seguidos y las respuestas rechazadas."""
+    warehouse = get_or_create_warehouse(db, warehouse_id, lock=True)
+    warehouse.last_heartbeat_attempt_at = now_utc()
+    warehouse.last_heartbeat_error = error[:500]
+    warehouse.heartbeat_failures = (warehouse.heartbeat_failures or 0) + 1
+    if rejected:
+        warehouse.heartbeat_rejections = (warehouse.heartbeat_rejections or 0) + 1
+    if api_url:
+        warehouse.api_url = api_url.rstrip("/")
 
 
 def advance_watermark(db: Session, warehouse: WarehouseEntity) -> None:
@@ -195,9 +213,9 @@ def apply_event(db: Session, event: EventEnvelope, source: str = "stream") -> st
     if not warehouse_id:
         raise InvalidEventError("El evento no dice de qué bodega viene")
 
+    # El heartbeat solo se acepta cifrado, por POST /sync/heartbeat
     if event.event_type == "WAREHOUSE_HEARTBEAT":
-        record_heartbeat(db, warehouse_id, event.payload)
-        return HEARTBEAT
+        return IGNORED
 
     warehouse = get_or_create_warehouse(db, warehouse_id, lock=True)
     if db.get(ProcessedEventEntity, event.event_id) is not None:

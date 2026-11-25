@@ -27,7 +27,7 @@ def make_handler(session_factory):
             with session_factory() as db:
                 result = apply_event(db, event, source="stream")
                 db.commit()
-            if result != "heartbeat":
+            if result != "ignored":
                 logger.info("Evento proyectado", extra={"event": "event_projected", "context": {
                     "warehouse_id": event.warehouse_id, "event_type": event.event_type, "sequence": event.sequence, "result": result}})
         except InvalidEventError as error:

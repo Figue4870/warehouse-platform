@@ -15,7 +15,6 @@
 body { background-color: var(--bg-primary); color: var(--text-main); padding: 2rem; }
 
 header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-.subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.3rem; }
 .badges { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 .status-badge { padding: 0.45rem 0.9rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }

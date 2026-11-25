@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from central.config import configured_api_urls, settings
+from central.config import settings, warehouse_registry
 from central.database import get_db
 from central.models import CatalogProductEntity, CentralAlertEntity, WarehouseEntity, WarehouseInventoryEntity, WarehouseProductEntity
 from central.projection import as_aware
@@ -78,7 +78,7 @@ def global_inventory_by_sku(sku: str, db: Session = Depends(get_db)):
 @router.get("/inventory/{sku}/live", summary="Inventario de un SKU preguntando EN VIVO a cada bodega (alternativa A)")
 def global_inventory_live(sku: str, db: Session = Depends(get_db)):
     started = time.perf_counter()
-    targets = dict(configured_api_urls())
+    targets = {wh: entry["api_url"] for wh, entry in warehouse_registry().items()}
     for warehouse in db.query(WarehouseEntity).all():
         if warehouse.api_url and warehouse.warehouse_id not in targets:
             targets[warehouse.warehouse_id] = warehouse.api_url
