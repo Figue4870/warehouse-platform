@@ -1,6 +1,6 @@
 """Modelo de lectura de la central (CQRS, lado de consulta)."""
 
-from sqlalchemy import JSON, BigInteger, Boolean, Column, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, Column, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint
 
 from central.database import Base
 
@@ -317,3 +317,86 @@ class NotificationEntity(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     read_at = Column(DateTime(timezone=True))
     read_by = Column(String(100))
+
+
+# Fase 8: procesos Batch
+class BatchRunEntity(Base):
+    """Cada ejecución de un proceso Batch (programada, manual o de recuperación)."""
+
+    __tablename__ = "batch_runs"
+    __table_args__ = (Index("ix_batch_runs_job_date", "job_name", "business_date"),)
+
+    id = Column(Integer, primary_key=True)
+    job_name = Column(String(60), nullable=False)
+    business_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False)               # REQUESTED | RUNNING | SUCCEEDED | PARTIAL | FAILED
+    trigger = Column(String(20), nullable=False)              # SCHEDULE | MANUAL | CATCH_UP
+    requested_by = Column(String(100))
+    attempt = Column(Integer, nullable=False, default=1)
+    warehouses_processed = Column(Integer)
+    movements_processed = Column(Integer)
+    stale_warehouses = Column(JSON)
+    outputs = Column(JSON)                                    # llaves escritas en S3
+    error = Column(Text)
+    correlation_id = Column(String(80))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+
+
+# Fase 9: contratos de proveedores (documento en S3; la Lambda lo valida y extrae su metadata)
+class ContractEntity(Base):
+    __tablename__ = "contracts"
+
+    contract_id = Column(String(20), primary_key=True)        # CT-000001
+    title = Column(String(200), nullable=False)
+    supplier_nit = Column(String(30))
+    supplier_name = Column(String(200))
+    supplier_verified = Column(Boolean)                       # confirmado con el sistema de Proveedores
+    signed_on = Column(Date)
+    valid_until = Column(Date)
+    agreed_prices = Column(JSON, nullable=False, default=list)   # [{"sku": ..., "price": "..."}]
+    metadata_source = Column(String(20))                      # DOCUMENT | FORM | MIXED
+    extracted = Column(JSON)                                  # lo que la Lambda leyó del documento
+    document_key = Column(String(300), nullable=False)
+    document_name = Column(String(200))
+    size_bytes = Column(Integer)
+    status = Column(String(20), nullable=False, default="UPLOADED")
+    # UPLOADED -> EXTRACTED | INVALID (Lambda) -> APPROVED | REJECTED (Líder) -> TERMINATED
+    sha256 = Column(String(64))
+    pages = Column(Integer)
+    validation_errors = Column(JSON)
+    uploaded_by = Column(String(100))
+    uploaded_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    processed_at = Column(DateTime(timezone=True))
+    reviewed_by = Column(String(100))
+    reviewed_at = Column(DateTime(timezone=True))
+    review_note = Column(Text)
+
+
+class StorageEventEntity(Base):
+    """Avisos que la Lambda envía a la central (uno por objeto y versión: repetirlo no cambia nada)."""
+
+    __tablename__ = "storage_events"
+
+    event_id = Column(String(120), primary_key=True)          # llave del objeto + etag
+    kind = Column(String(40), nullable=False)                 # CONTRACT_PROCESSED | DAILY_REPORT_PUBLISHED
+    object_key = Column(String(300), nullable=False)
+    outcome = Column(String(20), nullable=False)              # OK | REJECTED
+    detail = Column(JSON)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+# Envíos con Servientrega (integración asíncrona)
+class ShipmentEntity(Base):
+    __tablename__ = "shipments"
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(String(30), nullable=False, unique=True)
+    status = Column(String(30), nullable=False, default="PENDING")   # PENDING | CREATED | IN_TRANSIT | DELIVERED | ERROR
+    tracking_number = Column(String(40))
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text)
+    next_attempt_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)

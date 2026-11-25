@@ -11,6 +11,7 @@ central, construida por fases.
 | 7 | Plataforma central (CQRS), sincronización sin pérdida y tablero | `docs/fases/FASE_7.md` |
 | 6 | Transferencias entre bodegas con una Saga orquestada | `docs/fases/FASE_6.md` |
 | — | Usuarios, roles, catálogo universal, solicitudes, lotes y bodegas nuevas | `docs/fases/ROLES_Y_CATALOGO.md` |
+| 8-9 | S3, Batch diario, Lambda, contratos de proveedores, Proveedores y Servientrega | `docs/fases/FASE_8_9.md` |
 | — | Reportes con Athena (S3 + Glue + Athena) | `docs/fases/REPORTES_ATHENA.md` |
 | — | Prueba completa en AWS Learner Lab | `docs/fases/PRUEBA_AWS.md` |
 
@@ -25,11 +26,13 @@ services/common/                        librería compartida: eventos, comandos,
 services/warehouse/                     API de bodega y workers
 services/warehouse-web/                 página de la bodega (registrador y administrador de bodega)
 services/web-ui/                        sistema de diseño compartido por las dos páginas
-services/central/                       central: API, tablero, projector, reconciler, heartbeat, Saga, exportador
+services/central/                       central: API, tablero, projector, reconciler, heartbeat, Saga, Batch, envíos
+services/lambda/                        Lambda del bucket (y su emulación local)
+services/external-mocks/                Proveedores y Servientrega simulados
 infrastructure/docker/                  compose de bodega, nodo de API y central; .env de cada componente
 infrastructure/db/                      esquemas, datos de ejemplo y migraciones
-infrastructure/terraform/               AWS Learner Lab: EC2, ALB, Glue y Athena
-scripts/                                dlq.py, new_warehouse.py, athena_report.py, run_tests.ps1/.sh
+infrastructure/terraform/               AWS Learner Lab: EC2, ALB, Lambda, Glue y Athena
+scripts/                                dlq.py, new_warehouse.py, athena_report.py, contratos/, run_tests.ps1/.sh
 tests/                                  unit, central, integration, load, http
 ```
 
@@ -51,6 +54,8 @@ Con Docker Desktop encendido:
 | API de cada bodega | http://localhost:8001/docs, 8002, 8003 |
 | RabbitMQ central / de WH-001 | http://localhost:15680 (`platform`/`platform`) / http://localhost:15673 (`warehouse`/`warehouse`) |
 | Directorio de usuarios (OpenLDAP) | `ldap://localhost:3890`, base `dc=bodegas,dc=local` |
+| Proveedores y Servientrega simulados | http://localhost:8099/docs |
+| Archivos que en AWS van a S3 | carpeta `s3-local/` |
 
 Usuarios de desarrollo (contraseña `Bodegas2026!`): `admin.global`, `lider`, `admin.wh001`,
 `registrador.wh001` y sus equivalentes para WH-002 y WH-003. Viven en el directorio LDAP de la central,

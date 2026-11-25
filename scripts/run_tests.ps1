@@ -34,7 +34,7 @@ if (-not $python) {
     Write-Host "No se encontró Python. Instálalo (python.org) y vuelve a correr el script." -ForegroundColor Red
     exit 1
 }
-& $python -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3" 2>$null
+& $python -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3, jwt, multipart" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Faltan librerías de Python. Ejecuta primero:" -ForegroundColor Yellow
     Write-Host "  $python -m pip install -r services/warehouse/requirements-dev.txt"

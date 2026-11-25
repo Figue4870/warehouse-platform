@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from central.config import settings
 from central.models import (
     CatalogProductEntity,
+    ShipmentEntity,
     TransferCommandEntity,
     TransferEntity,
     TransferHistoryEntity,
@@ -27,6 +28,7 @@ logger = logging.getLogger("central.saga")
 REQUESTED = "REQUESTED"
 RESERVING_SOURCE = "RESERVING_SOURCE"
 SOURCE_RESERVED = "SOURCE_RESERVED"
+SHIPPING = "SHIPPING"
 IN_TRANSIT = "IN_TRANSIT"
 DESTINATION_RECEIVED = "DESTINATION_RECEIVED"
 COMPLETED = "COMPLETED"
@@ -34,7 +36,7 @@ FAILED = "FAILED"
 COMPENSATING = "COMPENSATING"
 RESERVATION_RELEASED = "RESERVATION_RELEASED"
 
-STATES = (REQUESTED, RESERVING_SOURCE, SOURCE_RESERVED, IN_TRANSIT, DESTINATION_RECEIVED, COMPLETED,
+STATES = (REQUESTED, RESERVING_SOURCE, SOURCE_RESERVED, SHIPPING, IN_TRANSIT, DESTINATION_RECEIVED, COMPLETED,
           FAILED, COMPENSATING, RESERVATION_RELEASED)
 TERMINAL = {COMPLETED, FAILED, RESERVATION_RELEASED}
 
@@ -42,6 +44,7 @@ NOTES = {
     REQUESTED: "Aceptada. El comando RESERVE espera en la central para salir hacia el origen",
     RESERVING_SOURCE: "Se pidió al origen apartar las unidades",
     SOURCE_RESERVED: "El origen apartó las unidades (no se pueden vender)",
+    SHIPPING: "Servientrega transporta las unidades reservadas; se espera la entrega",
     IN_TRANSIT: "Unidades reservadas en el origen; se pidió al destino recibirlas",
     DESTINATION_RECEIVED: "El destino ya sumó las unidades; se pidió al origen despachar lo reservado",
     COMPLETED: "Transferencia terminada: salió del origen y entró al destino",
@@ -140,13 +143,20 @@ def _start_release(db: Session, transfer: TransferEntity, detail: str, event: Ev
     _issue(db, transfer, c.RELEASE, transfer.source_warehouse_id)
 
 
-def _send_receive(db: Session, transfer: TransferEntity):
+def _send_receive(db: Session, transfer: TransferEntity, detail: str | None = None):
     transfer.receive_deadline = now_utc() + timedelta(seconds=transfer.timeout_seconds)
     extra = {"product": _catalog_info(db, transfer.sku)}
     if transfer.simulate_failure == c.SIMULATE_DESTINATION_REJECTS:
         extra["simulate_failure"] = c.SIMULATE_DESTINATION_REJECTS
     _issue(db, transfer, c.RECEIVE, transfer.destination_warehouse_id, deadline=transfer.receive_deadline, **extra)
-    _move(db, transfer, IN_TRANSIT)
+    _move(db, transfer, IN_TRANSIT, detail)
+
+
+def _ship(db: Session, transfer: TransferEntity):
+    """Transporte con Servientrega: la fila PENDING es el pedido que el worker de envíos le hace (outbox)."""
+    db.add(ShipmentEntity(transfer_id=transfer.transfer_id, status="PENDING", next_attempt_at=now_utc(),
+                          created_at=now_utc(), updated_at=now_utc()))
+    _move(db, transfer, SHIPPING)
 
 
 def _send_commit(db: Session, transfer: TransferEntity, event: EventEnvelope, detail: str | None = None):
@@ -227,7 +237,10 @@ def handle_reply(db: Session, event: EventEnvelope) -> str:
 
     if kind == c.TRANSFER_SOURCE_RESERVED and state in (REQUESTED, RESERVING_SOURCE):
         _move(db, transfer, SOURCE_RESERVED, event=event)
-        _send_receive(db, transfer)
+        if settings.SHIPPING_ENABLED:
+            _ship(db, transfer)
+        else:
+            _send_receive(db, transfer)
     elif kind == c.TRANSFER_SOURCE_REJECTED and state in (REQUESTED, RESERVING_SOURCE):
         transfer.failure_reason = reason
         _move(db, transfer, FAILED, f"El origen rechazó la reserva: {reason}", event)
@@ -266,7 +279,31 @@ def _ignore(db: Session, transfer: TransferEntity, event: EventEnvelope, detail:
     return IGNORED
 
 
-# 4) vencimientos (timeouts)
+# 4) avisos del transporte (Servientrega)
+def _locked(db: Session, transfer_id: str) -> TransferEntity | None:
+    return db.query(TransferEntity).filter(TransferEntity.transfer_id == transfer_id).with_for_update().first()
+
+
+def shipment_delivered(db: Session, transfer_id: str, tracking_number: str) -> bool:
+    """Servientrega entregó: se pide al destino sumar las unidades. NO hace commit."""
+    transfer = _locked(db, transfer_id)
+    if transfer is None or transfer.state != SHIPPING:
+        return False
+    _send_receive(db, transfer, f"Servientrega entregó (guía {tracking_number}); se pidió al destino recibir las unidades")
+    return True
+
+
+def shipment_failed(db: Session, transfer_id: str, reason: str) -> bool:
+    """El envío no se pudo hacer o volvió al origen: compensar liberando la reserva. NO hace commit."""
+    transfer = _locked(db, transfer_id)
+    if transfer is None or transfer.state != SHIPPING:
+        return False
+    transfer.failure_reason = reason
+    _start_release(db, transfer, f"{reason}. Se libera la reserva del origen")
+    return True
+
+
+# 5) vencimientos (timeouts)
 def check_timeouts(db: Session, now: datetime | None = None) -> int:
     """Pasos que no respondieron a tiempo -> se empieza a compensar. Hace commit."""
     now = now or now_utc()
@@ -294,7 +331,7 @@ def check_timeouts(db: Session, now: datetime | None = None) -> int:
     return changed
 
 
-# 5) para la API
+# 6) para la API
 def public_status(state: str) -> str:
     if state == COMPLETED:
         return "COMPLETED"
@@ -330,8 +367,12 @@ def transfer_detail(db: Session, transfer: TransferEntity) -> dict:
                .order_by(TransferHistoryEntity.id).all())
     commands = (db.query(TransferCommandEntity).filter(TransferCommandEntity.transfer_id == transfer.transfer_id)
                 .order_by(TransferCommandEntity.id).all())
+    shipment = db.query(ShipmentEntity).filter(ShipmentEntity.transfer_id == transfer.transfer_id).first()
     return {
         **transfer_summary(transfer),
+        "shipment": None if shipment is None else {
+            "carrier": "Servientrega", "status": shipment.status, "tracking_number": shipment.tracking_number,
+            "attempts": shipment.attempts, "last_error": shipment.last_error, "updated_at": as_aware(shipment.updated_at)},
         "history": [{"at": as_aware(h.created_at), "from": h.from_state, "to": h.to_state, "detail": h.detail,
                      "event_type": h.event_type, "warehouse_id": h.warehouse_id} for h in history],
         "commands": [{"command_type": cmd.command_type, "warehouse_id": cmd.warehouse_id, "created_at": as_aware(cmd.created_at),

@@ -16,7 +16,7 @@ ORDER=()
 record() { ORDER+=("$1"); RESULTS["$1"]=$2; }
 step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 
-if ! $PYTHON -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3" 2>/dev/null; then
+if ! $PYTHON -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3, jwt, multipart" 2>/dev/null; then
     echo "Faltan librerías de Python: $PYTHON -m pip install -r services/warehouse/requirements-dev.txt"
     exit 1
 fi

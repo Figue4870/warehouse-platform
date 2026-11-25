@@ -39,7 +39,7 @@ resource "aws_glue_catalog_table" "this" {
     "projection.dt.range"         = "2026-01-01,NOW"
     "projection.dt.interval"      = "1"
     "projection.dt.interval.unit" = "DAYS"
-    "storage.location.template"   = "s3://${local.bucket}/${each.key}/dt=$${dt}/"
+    "storage.location.template"   = "s3://${local.bucket}/exports/${each.key}/dt=$${dt}/"
   }
 
   partition_keys {
@@ -48,7 +48,7 @@ resource "aws_glue_catalog_table" "this" {
   }
 
   storage_descriptor {
-    location      = "s3://${local.bucket}/${each.key}/"
+    location      = "s3://${local.bucket}/exports/${each.key}/"
     input_format  = "org.apache.hadoop.mapred.TextInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
 

@@ -11,6 +11,9 @@ mock_provider "aws" {
   mock_resource "aws_lb" {
     defaults = { dns_name = "warehouse-platform-wh-002.us-east-1.elb.amazonaws.com", arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/wh-002/0abc" }
   }
+  mock_resource "aws_lambda_function" {
+    defaults = { arn = "arn:aws:lambda:us-east-1:123456789012:function:warehouse-platform-storage-processor" }
+  }
   mock_resource "aws_lb_target_group" {
     defaults = { arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/wh-002-api/0abc" }
   }
@@ -109,6 +112,38 @@ run "claves_del_heartbeat_bien_repartidas" {
   assert {
     condition     = !strcontains(module.central.user_data, "secreto-de-prueba-0123456789") && !strcontains(module.warehouse["wh_002"].user_data, "secreto-de-prueba-0123456789")
     error_message = "El secreto maestro no debe llegar a las máquinas."
+  }
+}
+
+run "lambda_con_labrole_y_conectada_a_la_central" {
+  command = apply
+
+  assert {
+    condition     = module.storage_lambda[0].function_name == "warehouse-platform-storage-processor"
+    error_message = "Debe existir la Lambda del bucket."
+  }
+  assert {
+    condition     = module.storage_lambda[0].arn == "arn:aws:lambda:us-east-1:123456789012:function:warehouse-platform-storage-processor"
+    error_message = "El ARN calculado para la central debe ser el de la función creada."
+  }
+  assert {
+    condition = (
+      strcontains(module.central.user_data, "LAMBDA_FUNCTION_ARN=arn:aws:lambda:us-east-1:123456789012:function:warehouse-platform-storage-processor") &&
+      strcontains(module.central.user_data, "LAMBDA_SHARED_SECRET=${sha256("secreto-de-prueba-0123456789:lambda")}")
+    )
+    error_message = "La central debe recibir el ARN de la Lambda y la clave de sus avisos."
+  }
+}
+
+run "sin_analytics_no_hay_lambda" {
+  command = plan
+  variables {
+    enable_analytics = false
+  }
+
+  assert {
+    condition     = output.lambda == null && !strcontains(module.central.user_data, "LAMBDA_FUNCTION_ARN")
+    error_message = "Sin bucket no se crea la Lambda ni se le pasa a la central."
   }
 }
 

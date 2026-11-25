@@ -76,6 +76,30 @@ class Settings(BaseSettings):
     ATHENA_MAX_ROWS: int = 1000
     AWS_DEFAULT_REGION: str = "us-east-1"
 
+    # Batch nocturno (reporte diario de todas las bodegas)
+    BATCH_HOUR: int = 23
+    BATCH_MINUTE: int = 0
+    BATCH_TIMEZONE: str = "America/Bogota"
+    BATCH_POLL_SECONDS: int = 15
+    BATCH_MAX_ATTEMPTS: int = 3
+
+    # Lambda: S3 ObjectCreated -> validar, transformar, registrar y avisar a la central
+    LAMBDA_FUNCTION_ARN: str = ""         # en AWS: la central conecta el bucket con esta función
+    LAMBDA_SHARED_SECRET: str = ""        # firma HMAC de los avisos que la Lambda envía a la central
+    CONTRACT_MAX_BYTES: int = 10 * 1024 * 1024
+
+    LAMBDA_RESULT_WAIT_SECONDS: int = 60  # sin aviso de la Lambda en este tiempo, la central lee el resultado de S3
+
+    # Sistemas externos (simulados en desarrollo)
+    SUPPLIERS_API_URL: str = "http://external_mocks:8000/proveedores"
+    SERVIENTREGA_API_URL: str = "http://external_mocks:8000/servientrega"
+    SERVIENTREGA_WEBHOOK_SECRET: str = ""
+    EXTERNAL_TIMEOUT_SECONDS: float = 2.0
+    CENTRAL_CALLBACK_URL: str = "http://central_api:8000"   # dirección con la que los sistemas externos avisan
+    SHIPPING_ENABLED: bool = False        # la Saga contrata el transporte con Servientrega entre la reserva y la recepción
+    SHIPPING_POLL_SECONDS: int = 10
+    SHIPPING_MAX_ATTEMPTS: int = 5
+
 
 settings = Settings()
 

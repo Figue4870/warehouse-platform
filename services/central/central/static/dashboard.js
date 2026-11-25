@@ -1,6 +1,6 @@
 import {
-  busy, createApi, emptyState, escapeHtml, fmt, formData, icon, loadingTable, openDialog, render, renderLogin,
-  renderShell, ROLE_NAMES, session, setCount, setCurrent, table, toast, TRANSFER_STATE_NAMES,
+  busy, createApi, downloadFile, emptyState, escapeHtml, fmt, formData, icon, loadingTable, openDialog, render,
+  renderLogin, renderShell, ROLE_NAMES, session, setCount, setCurrent, table, toast, TRANSFER_STATE_NAMES,
 } from "/ui/ui.js";
 
 const root = document.getElementById("root");
@@ -17,10 +17,14 @@ const NAV = {
     { id: "notifications", label: "Notificaciones", icon: "bell" },
     { id: "transfers", label: "Transferencias", icon: "truck" },
     { id: "inventory", label: "Inventario global", icon: "box" },
+    { id: "daily", label: "Reporte diario", icon: "calendar" },
+    { id: "contracts", label: "Contratos", icon: "file" },
     { id: "athena", label: "Reportes con Athena", icon: "layers" },
   ],
   LIDER: [
     { id: "overview", label: "Tablero", icon: "chart" },
+    { id: "contracts", label: "Contratos", icon: "file" },
+    { id: "daily", label: "Reporte diario", icon: "calendar" },
     { id: "inventory", label: "Inventario global", icon: "box" },
     { id: "athena", label: "Reportes con Athena", icon: "layers" },
     { id: "transfers", label: "Transferencias", icon: "truck" },
@@ -38,6 +42,7 @@ const SEVERITY = { INFO: "status-info", WARNING: "status-warn", CRITICAL: "statu
 
 const user = () => session.read()?.user;
 const isGlobal = () => user()?.role === "ADMIN_GLOBAL";
+const isLeader = () => user()?.role === "LIDER";
 
 function start() {
   const current = session.read();
@@ -86,8 +91,16 @@ async function refreshCounts() {
 const VIEWS = {};
 
 function go(id) {
+  clearTimeout(state.poll);
+  state.current = id;
   setCurrent(root, id);
   VIEWS[id](state.viewEl);
+}
+
+// Vuelve a dibujar la vista mientras algo sigue en proceso (y solo si el usuario no cambió de sección)
+function pollWhile(pending, id, redraw, ms = 3000) {
+  clearTimeout(state.poll);
+  if (pending) state.poll = setTimeout(() => state.current === id && redraw(), ms);
 }
 
 function head(title, note, actions = "") {
@@ -479,6 +492,181 @@ VIEWS.transfers = async (el) => {
     rows,
     empty: "No hay transferencias",
   });
+};
+
+// Contratos de proveedores
+const CONTRACT_STATUS = {
+  UPLOADED: ["Leyendo documento", "pill-info"], EXTRACTED: ["Por revisar", "pill-warn"], INVALID: ["Documento inválido", "pill-bad"],
+  APPROVED: ["Aprobado", "pill-ok"], REJECTED: ["Rechazado", ""], TERMINATED: ["Terminado", ""],
+};
+const SOURCE_NAMES = { DOCUMENT: "Leído del documento", FORM: "Del formulario", MIXED: "Documento y formulario" };
+
+VIEWS.contracts = async (el) => {
+  render(el, `${head("Contratos con proveedores", isLeader() ? "Sube el PDF: el sistema lee proveedor, fechas y precios pactados para que los revises antes de aprobar." : "",
+    isLeader() ? `<a class="btn btn-ghost" href="/static/plantilla-contrato.pdf" download>${icon("download")}Plantilla</a><button class="btn btn-primary" data-new>${icon("upload")}Subir contrato</button>` : "")}
+    <div data-table>${loadingTable(["Contrato", "Proveedor", "Vigencia", "Estado"], 5)}</div>`);
+  el.querySelector("[data-new]")?.addEventListener("click", () => uploadContract(el));
+  const rows = await api("/contracts");
+  el.querySelector("[data-table]").innerHTML = table({
+    columns: [
+      { label: "Contrato", render: (c) => `<span class="mono">${escapeHtml(c.contract_id)}</span><div class="subtle">${escapeHtml(c.title)}</div>` },
+      { label: "Proveedor", render: (c) => `${escapeHtml(c.supplier_name || "—")}${c.supplier_verified ? ` ${icon("check", "icon-sm")}` : ""}<div class="subtle">${c.supplier_nit ? `NIT ${escapeHtml(c.supplier_nit)}` : ""}</div>` },
+      { label: "Vigencia", render: (c) => `<span class="nowrap">${escapeHtml(c.signed_on || "—")} → ${escapeHtml(c.valid_until || "sin fecha")}</span>` },
+      { label: "Precios", num: true, render: (c) => fmt.int(c.agreed_prices.length) },
+      { label: "Estado", render: (c) => `<span class="pill ${CONTRACT_STATUS[c.status][1]}" ${c.status === "UPLOADED" ? 'aria-busy="true"' : ""}>${CONTRACT_STATUS[c.status][0]}</span>${c.observations.length && c.status === "EXTRACTED" ? `<div class="subtle">${fmt.int(c.observations.length)} observación(es)</div>` : ""}` },
+    ],
+    rows,
+    empty: "Todavía no hay contratos",
+    rowAttrs: (c) => `data-clickable data-contract="${escapeHtml(c.contract_id)}"`,
+  });
+  el.querySelectorAll("[data-contract]").forEach((row) => row.addEventListener("click", () => showContract(el, rows.find((c) => c.contract_id === row.dataset.contract))));
+  pollWhile(rows.some((c) => c.status === "UPLOADED"), "contracts", () => VIEWS.contracts(el));
+};
+
+function parsePrices(text = "") {
+  return text.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [sku, ...rest] = line.split(/[\s;:=]+/);
+    const price = Number(rest.join("").replace(/\./g, "").replace(",", "."));
+    if (!sku || !(price > 0)) throw new Error(`Revisa la línea «${line}»: debe ser SKU y precio`);
+    return { sku, price };
+  });
+}
+
+function uploadContract(el) {
+  const dialog = openDialog({
+    title: "Subir contrato",
+    submitLabel: "Subir",
+    body: `
+      <label class="field"><span>Documento (PDF)</span><input name="file" type="file" accept="application/pdf" required></label>
+      <label class="field"><span>Nombre del contrato</span><input name="title" maxlength="200" required placeholder="Suministro de EPP 2027"></label>
+      <details><summary class="muted">Completar a mano (si se deja vacío, se toma del documento)</summary>
+        <div class="stack" style="margin-top:var(--space-3)">
+          <div class="field-row">
+            <label class="field"><span>NIT</span><input name="supplier_nit" placeholder="900123456-7"><small data-supplier></small></label>
+            <label class="field"><span>Proveedor</span><input name="supplier_name" maxlength="200"></label>
+          </div>
+          <div class="field-row">
+            <label class="field"><span>Firma</span><input name="signed_on" type="date"></label>
+            <label class="field"><span>Vigente hasta</span><input name="valid_until" type="date"></label>
+          </div>
+          <label class="field"><span>Precios pactados</span><textarea name="prices" class="mono" rows="3" placeholder="EPP-CASCO-001 17500"></textarea><small>Un SKU y su precio por línea</small></label>
+        </div>
+      </details>`,
+    async onSubmit(data, form) {
+      const body = new FormData();
+      body.append("file", form.querySelector('[name="file"]').files[0]);
+      ["title", "supplier_nit", "supplier_name", "signed_on", "valid_until"].forEach((k) => data[k] && body.append(k, data[k]));
+      if (data.prices) body.append("agreed_prices", JSON.stringify(parsePrices(data.prices)));
+      const created = await api("/contracts", { method: "POST", body });
+      toast(`${created.contract_id} cargado; leyendo el documento`);
+      VIEWS.contracts(el);
+    },
+  });
+  const nit = dialog.querySelector('[name="supplier_nit"]');
+  nit.addEventListener("change", async () => {
+    const note = dialog.querySelector("[data-supplier]");
+    if (!nit.value.trim()) return (note.textContent = "");
+    note.textContent = "Consultando Proveedores…";
+    try {
+      const supplier = await api(`/suppliers/${encodeURIComponent(nit.value.trim())}`);
+      note.textContent = `${supplier.name} · ${supplier.status === "ACTIVE" ? "activo" : supplier.status.toLowerCase()}`;
+      const name = dialog.querySelector('[name="supplier_name"]');
+      if (!name.value) name.value = supplier.name;
+    } catch (err) {
+      note.textContent = err.message;
+    }
+  });
+}
+
+function showContract(el, c) {
+  const actions = isLeader()
+    ? { EXTRACTED: [["approve", "Aprobar", "btn-primary"], ["reject", "Rechazar", "btn-ghost"]], INVALID: [["reject", "Descartar", "btn-ghost"]], APPROVED: [["terminate", "Terminar", "btn-ghost"]] }[c.status] || []
+    : [];
+  const dialog = document.createElement("dialog");
+  dialog.innerHTML = `<div class="dialog-body">
+      <div class="page-head"><div><h2>${escapeHtml(c.title)}</h2><p class="subtle"><span class="mono">${escapeHtml(c.contract_id)}</span> · ${escapeHtml(c.metadata_source ? SOURCE_NAMES[c.metadata_source] : "Sin leer todavía")}</p></div>
+        <span class="pill ${CONTRACT_STATUS[c.status][1]}">${CONTRACT_STATUS[c.status][0]}</span></div>
+      ${c.observations.length ? `<div class="notice ${c.status === "INVALID" ? "notice-bad" : "notice-warn"}">${c.observations.map((o) => `<div>${escapeHtml(o)}</div>`).join("")}</div>` : ""}
+      <dl class="facts">
+        <div><dt>Proveedor</dt><dd>${escapeHtml(c.supplier_name || "—")}${c.supplier_verified ? '<div class="subtle">Confirmado con Proveedores</div>' : ""}</dd></div>
+        <div><dt>NIT</dt><dd>${escapeHtml(c.supplier_nit || "—")}</dd></div>
+        <div><dt>Firma</dt><dd>${escapeHtml(c.signed_on || "—")}</dd></div>
+        <div><dt>Vigente hasta</dt><dd>${escapeHtml(c.valid_until || "—")}</dd></div>
+      </dl>
+      ${table({ columns: [{ label: "SKU", render: (p) => `<span class="mono">${escapeHtml(p.sku)}</span>` }, { label: "Precio pactado", num: true, render: (p) => fmt.money(p.price) }], rows: c.agreed_prices, empty: "Sin precios pactados" })}
+      <p class="subtle">${escapeHtml(c.document.name || "")} · ${fmt.int(c.document.pages)} pág. · ${fmt.int(c.document.size_bytes)} bytes · subido por ${escapeHtml(c.uploaded_by || "")} ${fmt.ago(c.uploaded_at)}${c.reviewed_by ? ` · revisado por ${escapeHtml(c.reviewed_by)}` : ""}</p>
+      <p class="notice notice-bad" data-error hidden></p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" data-doc>${icon("download")}Documento</button>
+        <span style="flex:1"></span>
+        ${actions.map(([action, label, kind]) => `<button class="btn ${kind}" data-action="${action}">${label}</button>`).join("")}
+        <button class="btn" data-close>Cerrar</button>
+      </div></div>`;
+  document.body.append(dialog);
+  const error = dialog.querySelector("[data-error]");
+  dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+  dialog.querySelector("[data-doc]").addEventListener("click", (e) => busy(e.currentTarget, () => downloadFile(api, c.document.url, `${c.contract_id}.pdf`)).catch((err) => toast(err.message, "bad")));
+  dialog.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", async () => {
+    error.hidden = true;
+    try {
+      const result = await busy(b, () => api(`/contracts/${c.contract_id}/${b.dataset.action}`, { method: "POST", body: b.dataset.action === "approve" ? { apply_prices: true } : {} }));
+      toast(b.dataset.action === "approve" ? `Aprobado. Costos actualizados: ${result.catalog_updated.join(", ") || "ninguno"}` : "Contrato actualizado");
+      dialog.close();
+      VIEWS.contracts(el);
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+    }
+  }));
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.showModal();
+}
+
+// Reporte diario (Batch)
+const RUN_STATUS = {
+  REQUESTED: ["En cola", "pill-info"], RUNNING: ["Generando", "pill-info"], SUCCEEDED: ["Completo", "pill-ok"],
+  PARTIAL: ["Con datos atrasados", "pill-warn"], FAILED: ["Falló", "pill-bad"],
+};
+const TRIGGERS = { SCHEDULE: "Programado", MANUAL: "Manual", CATCH_UP: "Recuperación" };
+
+VIEWS.daily = async (el) => {
+  render(el, `${head("Reporte diario", "", `<button class="btn btn-primary" data-run>${icon("refresh")}Generar</button>`)}
+    <div data-table>${loadingTable(["Día", "Estado", "Bodegas", "Movimientos", "Archivos"], 6)}</div>`);
+  el.querySelector("[data-run]").addEventListener("click", () => openDialog({
+    title: "Generar el reporte de un día",
+    submitLabel: "Generar",
+    body: `<label class="field"><span>Día</span><input name="business_date" type="date" value="${new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" })}" required></label>
+      <p class="muted">Si ya existe, se reemplaza con los datos actuales.</p>`,
+    async onSubmit(data) {
+      await api("/batch/runs", { method: "POST", body: data });
+      toast("Reporte en cola");
+      VIEWS.daily(el);
+    },
+  }));
+  const data = await api("/batch/runs");
+  el.querySelector(".page-head h1").insertAdjacentHTML("afterend", `<p>Todos los días a las ${escapeHtml(data.schedule.replace("America/Bogota", "(hora de Bogotá)"))} con los movimientos de todas las bodegas. Queda en S3 y una Lambda verifica que los totales cuadren.</p>`);
+  const files = (r) => {
+    const pick = (suffix) => r.outputs.find((k) => k.startsWith("reports/daily/") && k.endsWith(suffix));
+    return [[".json", "JSON"], [".csv", "CSV"]].map(([suffix, label]) => pick(suffix) && `<button class="btn btn-sm btn-ghost" data-file="${escapeHtml(pick(suffix))}">${icon("download", "icon-sm")}${label}</button>`).filter(Boolean).join("");
+  };
+  const verification = (v) => (!v ? '<span class="subtle">Pendiente</span>'
+    : v.outcome === "OK" ? `<span class="status status-ok">Cuadra</span>` : `<span class="status status-bad">No cuadra</span><div class="subtle">${escapeHtml(v.errors.join("; "))}</div>`);
+  el.querySelector("[data-table]").innerHTML = table({
+    columns: [
+      { label: "Día", render: (r) => `<span class="nowrap">${escapeHtml(r.business_date)}</span><div class="subtle">${escapeHtml(TRIGGERS[r.trigger] || r.trigger)}${r.requested_by ? ` · ${escapeHtml(r.requested_by)}` : ""}${r.attempt > 1 ? ` · intento ${r.attempt}` : ""}</div>` },
+      { label: "Estado", render: (r) => `<span class="pill ${RUN_STATUS[r.status][1]}" ${["REQUESTED", "RUNNING"].includes(r.status) ? 'aria-busy="true"' : ""}>${RUN_STATUS[r.status][0]}</span>${r.stale_warehouses.length ? `<div class="subtle">Atrasadas: ${escapeHtml(r.stale_warehouses.join(", "))}</div>` : ""}${r.error ? `<div class="subtle">${escapeHtml(r.error)}</div>` : ""}` },
+      { label: "Bodegas", num: true, render: (r) => fmt.int(r.warehouses_processed) },
+      { label: "Movimientos", num: true, render: (r) => fmt.int(r.movements_processed) },
+      { label: "Duración", num: true, render: (r) => (r.duration_seconds === null ? "—" : r.duration_seconds < 1 ? "< 1 s" : `${r.duration_seconds.toFixed(1)} s`) },
+      { label: "Verificación", render: (r) => (["SUCCEEDED", "PARTIAL"].includes(r.status) ? verification(r.verification) : "") },
+      { label: "", render: (r) => `<div class="cluster" style="justify-content:flex-end">${files(r)}</div>` },
+    ],
+    rows: data.items,
+    empty: "Todavía no se ha generado ningún reporte",
+  });
+  el.querySelectorAll("[data-file]").forEach((b) => b.addEventListener("click", () => busy(b, () => downloadFile(api, `/batch/files?key=${encodeURIComponent(b.dataset.file)}`, b.dataset.file.split("/").pop())).catch((err) => toast(err.message, "bad"))));
+  const pending = data.items.some((r) => ["REQUESTED", "RUNNING"].includes(r.status) || (["SUCCEEDED", "PARTIAL"].includes(r.status) && !r.verification));
+  pollWhile(pending, "daily", () => VIEWS.daily(el), 4000);
 };
 
 // Reportes con Athena

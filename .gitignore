@@ -7,6 +7,7 @@ venv/
 .idea/
 .vscode/
 exports/
+s3-local/
 # Terraform
 .terraform/
 *.tfstate
@@ -20,3 +21,4 @@ terraform.tfvars
 
 *.results.json
 infrastructure/docker/components/*/runtime.env
+.build/

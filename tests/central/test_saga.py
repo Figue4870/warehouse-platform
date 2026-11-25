@@ -147,3 +147,105 @@ def test_destino_caido_no_se_compensa_a_ciegas(saga, wh1, wh2):
     assert [s[:2] for s in saga.publish()] == [(c.RELEASE, "WH-001")]
     saga.reply(wh1, c.TRANSFER_SOURCE_RELEASED, tid, outcome="DONE", released_quantity=30)
     assert saga.get(tid)["state"] == "RESERVATION_RELEASED"
+
+
+# Transporte con Servientrega (integración asíncrona entre la reserva y la recepción)
+@pytest.fixture
+def shipping_on(monkeypatch):
+    from central.config import settings
+
+    monkeypatch.setattr(settings, "SHIPPING_ENABLED", True)
+    created = []
+
+    def create_shipment(reference, origin, destination, items, callback_url):
+        created.append((reference, origin["warehouse_id"], destination["warehouse_id"], items, callback_url))
+        return {"tracking_number": f"SRV{len(created):09d}", "status": "CREATED"}
+
+    monkeypatch.setattr("central.external.create_shipment", create_shipment)
+    return created
+
+
+def reserved_and_shipping(saga, wh1):
+    tid = start(saga)
+    saga.publish()
+    saga.reply(wh1, c.TRANSFER_SOURCE_RESERVED, tid)
+    assert saga.get(tid)["state"] == "SHIPPING"
+    assert saga.publish() == []                           # el destino todavía no recibe nada
+    return tid
+
+
+def test_servientrega_entrega_y_la_saga_sigue(saga, wh1, wh2, central_sf, shipping_on):
+    from central.shipping import apply_status, request_pending
+
+    tid = reserved_and_shipping(saga, wh1)
+    assert request_pending(central_sf) == 1
+    assert shipping_on[0][:4] == (tid, "WH-001", "WH-002", [{"sku": "P-001", "quantity": 30}])
+    assert shipping_on[0][4].endswith("/integrations/servientrega")
+    with central_sf() as db:
+        assert apply_status(db, tid, "SRV000000001", "IN_TRANSIT", None, "webhook") == "applied"
+        assert apply_status(db, tid, "SRV000000001", "CREATED", None, "webhook") == "duplicate"   # aviso viejo
+        assert apply_status(db, tid, "SRV000000001", "DELIVERED", None, "webhook") == "applied"
+        db.commit()
+    detail = saga.get(tid)
+    assert detail["state"] == "IN_TRANSIT" and detail["shipment"]["status"] == "DELIVERED"
+    assert [s[:2] for s in saga.publish()] == [(c.RECEIVE, "WH-002")]
+    saga.reply(wh2, c.TRANSFER_DESTINATION_RECEIVED, tid)
+    saga.publish()
+    saga.reply(wh1, c.TRANSFER_SOURCE_COMMITTED, tid)
+    assert saga.get(tid)["state"] == "COMPLETED"
+
+
+def test_servientrega_devuelve_el_envio_y_se_libera_la_reserva(saga, wh1, central_sf, shipping_on):
+    from central.shipping import apply_status, request_pending
+
+    tid = reserved_and_shipping(saga, wh1)
+    request_pending(central_sf)
+    with central_sf() as db:
+        apply_status(db, tid, "SRV000000001", "RETURNED", "Dirección errada", "poll")
+        db.commit()
+    assert saga.get(tid)["state"] == "COMPENSATING"
+    assert [s[:2] for s in saga.publish()] == [(c.RELEASE, "WH-001")]
+
+
+def test_servientrega_caida_reintenta_con_espera_y_luego_compensa(saga, wh1, central_sf, shipping_on, monkeypatch):
+    from central import external
+    from central.config import settings
+    from central.shipping import request_pending
+
+    def down(*args):
+        raise external.ExternalUnavailable("Servientrega respondió 503")
+
+    monkeypatch.setattr("central.external.create_shipment", down)
+    tid = reserved_and_shipping(saga, wh1)
+    assert request_pending(central_sf) == 1
+    assert request_pending(central_sf) == 0               # espera antes del siguiente intento
+    assert saga.get(tid)["shipment"]["attempts"] == 1
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    for _ in range(settings.SHIPPING_MAX_ATTEMPTS - 1):
+        request_pending(central_sf, now=later)
+        later += timedelta(hours=1)
+    detail = saga.get(tid)
+    assert detail["shipment"]["status"] == "ERROR" and detail["state"] == "COMPENSATING"
+    assert [s[:2] for s in saga.publish()] == [(c.RELEASE, "WH-001")]
+
+
+def test_webhook_de_servientrega_firmado(saga, wh1, central_client, central_sf, shipping_on, monkeypatch):
+    import json
+    import time
+
+    from central import external
+    from central.config import settings
+    from central.shipping import request_pending
+
+    monkeypatch.setattr(settings, "SERVIENTREGA_WEBHOOK_SECRET", "s3cr3t")
+    tid = reserved_and_shipping(saga, wh1)
+    request_pending(central_sf)
+    body = json.dumps({"tracking_number": "SRV000000001", "reference": tid, "status": "DELIVERED"}).encode()
+    ts = str(int(time.time()))
+    response = central_client.post("/integrations/servientrega", content=body, headers={
+        "Content-Type": "application/json", "X-Signature-Timestamp": ts, "X-Signature": external.signature("s3cr3t", ts, body)})
+    assert response.json()["result"] == "applied"
+    assert saga.get(tid)["state"] == "IN_TRANSIT"
+    forged = central_client.post("/integrations/servientrega", content=body, headers={
+        "Content-Type": "application/json", "X-Signature-Timestamp": ts, "X-Signature": "0" * 64})
+    assert forged.status_code == 401

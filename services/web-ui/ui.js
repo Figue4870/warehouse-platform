@@ -21,6 +21,9 @@ const ICONS = {
   alert: '<path d="M12 4 2.8 19.5h18.4L12 4Z"/><path d="M12 10v4M12 17v.01"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
   activity: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
+  upload: '<path d="M12 20V9"/><path d="m7 14 5-5 5 5"/><path d="M5 4h14"/>',
 };
 
 export function icon(name, extraClass = "") {
@@ -77,10 +80,11 @@ export function createApi(baseUrl, onUnauthorized) {
     const current = session.read();
     const finalHeaders = { ...headers };
     if (current?.token) finalHeaders.Authorization = `Bearer ${current.token}`;
-    if (body !== undefined) finalHeaders["Content-Type"] = "application/json";
+    const multipart = body instanceof FormData;
+    if (body !== undefined && !multipart) finalHeaders["Content-Type"] = "application/json";
     let response;
     try {
-      response = await fetch(`${baseUrl}${path}`, { method, headers: finalHeaders, body: body === undefined ? undefined : JSON.stringify(body) });
+      response = await fetch(`${baseUrl}${path}`, { method, headers: finalHeaders, body: body === undefined || multipart ? body : JSON.stringify(body) });
     } catch {
       throw new ApiError(0, "No hay conexión con el servidor");
     }
@@ -91,6 +95,18 @@ export function createApi(baseUrl, onUnauthorized) {
     if (!response.ok) throw new ApiError(response.status, detailText(data?.detail));
     return data;
   };
+}
+
+// Descarga un archivo protegido por el token (un enlace normal no lleva el encabezado Authorization)
+export async function downloadFile(api, path, filename) {
+  const response = await api(path, { raw: true });
+  if (!response.ok) throw new ApiError(response.status, "No se pudo descargar el archivo");
+  const url = URL.createObjectURL(await response.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Construcción de vistas
@@ -216,7 +232,8 @@ export const TRANSFER_STATE_NAMES = {
   REQUESTED: "Solicitada",
   RESERVING_SOURCE: "Reservando en origen",
   SOURCE_RESERVED: "Reservada en origen",
-  IN_TRANSIT: "En tránsito",
+  SHIPPING: "Con Servientrega",
+  IN_TRANSIT: "Recibiendo en destino",
   DESTINATION_RECEIVED: "Recibida en destino",
   COMPLETED: "Completada",
   FAILED: "Fallida",

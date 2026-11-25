@@ -1,5 +1,6 @@
-# Plataforma central (Fases 6 y 7): postgres, rabbitmq, directorio LDAP, api, projector, reconciler,
-# heartbeat, saga, command_relay y exporter. Usa la red warehouse_platform.
+# Plataforma central: postgres, rabbitmq, directorio LDAP, api y workers (projector, reconciler, heartbeat, saga,
+# command_relay, exporter, batch y shipping). Sin AWS también levanta la emulación de la Lambda y los sistemas
+# externos simulados. Usa la red warehouse_platform.
 
 x-central: &central
   build:
@@ -28,13 +29,29 @@ x-central: &central
     # Fase 6: Saga
     SAGA_STEP_TIMEOUT_SECONDS: ${SAGA_STEP_TIMEOUT_SECONDS:-60}
     SAGA_ALLOW_SIMULATION: ${SAGA_ALLOW_SIMULATION:-true}
+    # Bucket de la plataforma (S3 en AWS; sin bucket, la carpeta s3-local/ del repositorio con la misma estructura)
     EXPORT_S3_BUCKET: ${EXPORT_S3_BUCKET:-}
-    EXPORT_DIR: /app/exports
+    EXPORT_DIR: /app/bucket
     EXPORT_INTERVAL_SECONDS: ${EXPORT_INTERVAL_SECONDS:-60}
     EXPORT_SNAPSHOT_SECONDS: ${EXPORT_SNAPSHOT_SECONDS:-3600}
     ATHENA_DATABASE: ${ATHENA_DATABASE:-warehouse_analytics}
     ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-}
     AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    # Fase 8: Batch diario
+    BATCH_HOUR: ${BATCH_HOUR:-23}
+    BATCH_MINUTE: ${BATCH_MINUTE:-0}
+    BATCH_TIMEZONE: ${BATCH_TIMEZONE:-America/Bogota}
+    # Fase 9: Lambda (en AWS, LAMBDA_FUNCTION_ARN la pone Terraform)
+    LAMBDA_FUNCTION_ARN: ${LAMBDA_FUNCTION_ARN:-}
+    LAMBDA_SHARED_SECRET: ${LAMBDA_SHARED_SECRET:-dev-lambda-secret}
+    # Sistemas externos
+    SUPPLIERS_API_URL: ${SUPPLIERS_API_URL:-http://external_mocks:8000/proveedores}
+    SERVIENTREGA_API_URL: ${SERVIENTREGA_API_URL:-http://external_mocks:8000/servientrega}
+    SERVIENTREGA_WEBHOOK_SECRET: ${SERVIENTREGA_WEBHOOK_SECRET:-dev-servientrega-secret}
+    CENTRAL_CALLBACK_URL: http://central_api:8000
+    SHIPPING_ENABLED: ${SHIPPING_ENABLED:-true}
+  volumes:
+    - ../../../s3-local:/app/bucket
   networks: [default, platform]
   restart: unless-stopped
 
@@ -180,11 +197,54 @@ services:
     <<: *central
     container_name: central_exporter
     command: ["python", "-m", "central.workers.exporter"]
-    volumes:
-      - ../../../exports:/app/exports         # sin AWS: los archivos quedan en la carpeta exports/ del repositorio
     depends_on:
       central_postgres:
         condition: service_healthy
+
+  # Fase 8: reporte diario de todas las bodegas (23:00, reejecutable desde /batch/runs)
+  central_batch:
+    <<: *central
+    container_name: central_batch
+    command: ["python", "-m", "central.workers.batch"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+
+  # Envíos con Servientrega dentro de la Saga
+  central_shipping:
+    <<: *central
+    container_name: central_shipping
+    command: ["python", "-m", "central.workers.shipping"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+
+  # Fase 9: el mismo código de la Lambda, disparado por los archivos nuevos de s3-local/ (con S3 queda sin trabajo)
+  lambda_local:
+    build:
+      context: ../../../services/lambda
+    container_name: lambda_local
+    environment:
+      BUCKET_DIR: /app/bucket
+      CENTRAL_URL: http://central_api:8000
+      CENTRAL_SHARED_SECRET: ${LAMBDA_SHARED_SECRET:-dev-lambda-secret}
+    volumes:
+      - ../../../s3-local:/app/bucket
+    depends_on:
+      - central_api
+    restart: unless-stopped
+
+  # Proveedores (síncrono) y Servientrega (asíncrono) simulados
+  external_mocks:
+    build:
+      context: ../../../services/external-mocks
+    container_name: external_mocks
+    environment:
+      SERVIENTREGA_WEBHOOK_SECRET: ${SERVIENTREGA_WEBHOOK_SECRET:-dev-servientrega-secret}
+      SERVIENTREGA_DELIVER_AFTER_SECONDS: ${SERVIENTREGA_DELIVER_AFTER_SECONDS:-8}
+    ports:
+      - "${EXTERNAL_MOCKS_PORT:-8099}:8000"
+    restart: unless-stopped
 
 networks:
   platform:

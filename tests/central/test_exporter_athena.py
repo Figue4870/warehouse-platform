@@ -10,7 +10,7 @@ from botocore.stub import ANY, Stubber
 
 from central.analytics.athena import REPORTS, AthenaReports, render_sql
 from central.analytics.exporter import Exporter, export_dataset
-from central.analytics.storage import LocalStorage, S3Storage
+from central.storage import LocalStorage, S3Storage
 from central.api import app
 from central.models import MovementHistoryEntity, TransferEntity
 from central.routers.athena import get_athena
@@ -18,7 +18,7 @@ from central.routers.athena import get_athena
 
 def read_jsonl(base: Path, dataset: str) -> dict[str, list[dict]]:
     files = {}
-    for path in sorted((base / dataset).glob("dt=*/*.json")):
+    for path in sorted((base / "exports" / dataset).glob("dt=*/*.json")):
         files[f"{path.parent.name}/{path.name}"] = [json.loads(line) for line in path.read_text().splitlines()]
     return files
 
@@ -90,11 +90,12 @@ def test_s3_crea_el_bucket_si_no_existe_y_sube(monkeypatch):
         stub.add_client_error("head_bucket", service_error_code="404", http_status_code=404, expected_params={"Bucket": "datos"})
         stub.add_response("create_bucket", {"Location": "/datos"}, {"Bucket": "datos"})
         for name in ("l.json", "m.json"):
-            stub.add_response("put_object", {"ETag": '"abc"'}, {"Bucket": "datos", "Key": f"movements/dt=2026-11-16/{name}",
-                                                                "Body": ANY, "ContentType": "application/x-ndjson"})
+            stub.add_response("put_object", {"ETag": '"abc"'}, {"Bucket": "datos", "Key": f"exports/movements/dt=2026-11-16/{name}",
+                                                                "Body": ANY, "ContentType": "application/x-ndjson",
+                                                                "Metadata": {}})
         storage = S3Storage("datos", client, region="us-east-1")
-        storage.put("movements/dt=2026-11-16/l.json", b'{"a": 1}\n')
-        storage.put("movements/dt=2026-11-16/m.json", b'{"a": 2}\n')   # ya no vuelve a revisar el bucket
+        storage.put("exports/movements/dt=2026-11-16/l.json", b'{"a": 1}\n')
+        storage.put("exports/movements/dt=2026-11-16/m.json", b'{"a": 2}\n')   # ya no vuelve a revisar el bucket
         stub.assert_no_pending_responses()
 
 

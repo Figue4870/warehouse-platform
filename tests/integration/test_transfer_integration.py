@@ -15,6 +15,7 @@ def test_transferencia_completa_entre_dos_bodegas(api, wh2, central):
     assert response.status_code == 202 and response.json()["status"] == "PROCESSING"
     transfer_id = response.json()["transfer_id"]
 
+    # Con Servientrega activo, el transporte simulado tarda unos segundos más
     done = wait_until(lambda: (t := central.get(f"/transfers/{transfer_id}").json())["state"] in ("COMPLETED", "FAILED",
                       "RESERVATION_RELEASED") and t, timeout=120, what="que la Saga termine")
     assert done["state"] == "COMPLETED", done["note"]
