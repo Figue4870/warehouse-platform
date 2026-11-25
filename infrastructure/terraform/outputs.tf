@@ -38,3 +38,13 @@ output "analytics" {
     console       = "https://${var.aws_region}.console.aws.amazon.com/athena/home?region=${var.aws_region}#/query-editor"
   } : null
 }
+
+output "lambda" {
+  description = "Fase 9: Lambda del bucket"
+  value = local.lambda_enabled ? {
+    function_name = module.storage_lambda[0].function_name
+    arn           = module.storage_lambda[0].arn
+    logs          = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/${replace(module.storage_lambda[0].log_group, "/", "$252F")}"
+    triggers      = "contracts/*document.pdf, reports/daily/*.json"
+  } : null
+}

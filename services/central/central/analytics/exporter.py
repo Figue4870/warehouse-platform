@@ -102,7 +102,7 @@ def export_dataset(session_factory: sessionmaker, storage, dataset: str, batch_s
             by_day[day(date_of(record))].append(to_row(record))
         name = uuid.uuid4().hex
         for dt, rows in sorted(by_day.items()):
-            storage.put(f"{dataset}/dt={dt}/{name}.json", to_jsonl(rows))
+            storage.put(f"exports/{dataset}/dt={dt}/{name}.json", to_jsonl(rows))
         now = now_utc()
         for record in records:
             record.exported_at = now
@@ -128,7 +128,7 @@ def export_inventory_snapshot(session_factory: sessionmaker, storage, now: datet
             "warehouse_status": warehouses.get(inv.warehouse_id),
         } for inv, product in rows]
         if data:
-            storage.put(f"inventory/dt={day(now)}/snapshot-{now.strftime('%H%M%S')}.json", to_jsonl(data))
+            storage.put(f"exports/inventory/dt={day(now)}/snapshot-{now.strftime('%H%M%S')}.json", to_jsonl(data))
         return len(data)
 
 

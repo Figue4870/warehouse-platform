@@ -7,7 +7,7 @@ from platform_common.messaging import GracefulStop
 
 from central import models  # noqa: F401
 from central.analytics.exporter import Exporter
-from central.analytics.storage import storage_from_settings
+from central.storage import storage_from_settings
 from central.config import settings
 from central.database import SessionLocal
 from central.logging_config import setup_logging

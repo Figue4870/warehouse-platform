@@ -187,3 +187,16 @@ variable "warehouses" {
     error_message = "api_nodes debe estar entre 0 y 3."
   }
 }
+
+# Fase 9: Lambda del bucket (requiere enable_analytics, que define el bucket)
+variable "enable_lambda" {
+  description = "Crear la Lambda que valida contratos y verifica el reporte diario."
+  type        = bool
+  default     = true
+}
+
+variable "lambda_role_name" {
+  description = "Rol de ejecución de la Lambda. El Learner Lab solo permite usar el que ya trae (LabRole)."
+  type        = string
+  default     = "LabRole"
+}

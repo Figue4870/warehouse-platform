@@ -16,10 +16,13 @@ from central.routers import (
     admin,
     athena,
     auth,
+    batch,
     catalog,
+    contracts,
     dashboard,
     global_inventory,
     health,
+    integrations,
     notifications,
     product_requests,
     reports,
@@ -49,7 +52,9 @@ app = FastAPI(
         "Fase 6: transferencias entre bodegas con una Saga orquestada (`POST /transfers`).\n\n"
         "Reportes: `/reports/*` (modelo de lectura) y `/reports/athena/*` (Athena sobre S3). Tablero: `/dashboard`.\n\n"
         "Usuarios y roles: `POST /auth/login` devuelve un token firmado (Ed25519) que sirve en la central y en las "
-        "bodegas. Administrador global: bodegas, catálogo universal, usuarios y notificaciones."
+        "bodegas. Administrador global: bodegas, catálogo universal, usuarios y notificaciones.\n\n"
+        "Fases 8 y 9: reporte diario en S3 con un proceso Batch reejecutable (`/batch/runs`) y contratos de "
+        "proveedores (`/contracts`) validados por una Lambda que avisa por `/integrations/storage-events`."
     ),
     version="8.0.0",
     lifespan=lifespan,
@@ -98,6 +103,9 @@ app.include_router(sync.router)
 app.include_router(reports.router)
 app.include_router(transfers.router)
 app.include_router(athena.router)
+app.include_router(batch.router)
+app.include_router(contracts.router)
+app.include_router(integrations.router)
 app.include_router(dashboard.router)
 app.mount("/static", StaticFiles(directory=dashboard.STATIC_DIR, check_dir=False), name="static")
 app.mount("/ui", StaticFiles(directory=dashboard.ui_dir(), check_dir=False), name="ui")

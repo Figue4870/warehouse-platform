@@ -26,7 +26,18 @@ data "aws_subnet" "second_zone" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
+  # Fase 9: el ARN de la Lambda se calcula (no se lee del recurso) para que la central lo reciba sin esperar a
+  # la función, y la función reciba la IP de la central sin crear una dependencia circular
+  lambda_enabled = var.enable_analytics && var.enable_lambda
+  lambda_name    = "${var.project_name}-storage-processor"
+  lambda_arn     = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_name}"
+  # Claves HMAC de los avisos que recibe la central, derivadas del secreto del heartbeat
+  lambda_secret       = sha256("${var.heartbeat_secret}:lambda")
+  servientrega_secret = sha256("${var.heartbeat_secret}:servientrega")
+
   # IP privada fija de la central: las bodegas la necesitan (RabbitMQ central) y la central necesita
   # las de ellas (heartbeat). Al conocerla de antemano no hay dependencia circular entre módulos.
   central_private_ip = cidrhost(data.aws_subnet.nodes.cidr_block, var.central_private_ip_host)
@@ -123,7 +134,11 @@ module "central" {
     # Bodegas a las que la central les pregunta el heartbeat, con la clave de cada una
     WAREHOUSE_API_URLS          = join(",", [for key, wh in var.warehouses : "${wh.wh_id}=http://${module.warehouse[key].private_ip}:${wh.api_port}"])
     WAREHOUSE_HEARTBEAT_SECRETS = join(",", [for key, wh in var.warehouses : "${wh.wh_id}=${local.heartbeat_secrets[key]}"])
-    }, var.enable_analytics ? {
+    LAMBDA_SHARED_SECRET        = local.lambda_secret
+    SERVIENTREGA_WEBHOOK_SECRET = local.servientrega_secret
+    }, local.lambda_enabled ? {
+    LAMBDA_FUNCTION_ARN = local.lambda_arn
+    } : {}, var.enable_analytics ? {
     # El exportador sube los datos a S3 y la API ejecuta los reportes en Athena (con LabRole, sin llaves)
     EXPORT_S3_BUCKET = module.analytics[0].bucket
     ATHENA_DATABASE  = module.analytics[0].database
@@ -199,4 +214,18 @@ module "load_balancer" {
     { "nodo1" = module.warehouse[each.key].instance_id },
     { for name, node in local.api_nodes : "nodo${node.number}" => module.api_node[name].instance_id if node.warehouse == each.key }
   )
+}
+
+# Fase 9: Lambda del bucket (contratos y reporte diario)
+module "storage_lambda" {
+  source = "./modules/lambda"
+  count  = local.lambda_enabled ? 1 : 0
+
+  function_name = local.lambda_name
+  source_dir    = "${path.root}/../../services/lambda"
+  role_arn      = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.lambda_role_name}"
+  bucket        = module.analytics[0].bucket
+  account_id    = data.aws_caller_identity.current.account_id
+  central_url   = "http://${module.central.public_ip}:${var.central_port}"
+  shared_secret = local.lambda_secret
 }

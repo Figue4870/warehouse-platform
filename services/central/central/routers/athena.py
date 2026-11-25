@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from central.analytics.athena import REPORTS, AthenaNotConfigured, AthenaReports, render_sql
 from central.analytics.exporter import export_status
-from central.analytics.storage import storage_from_settings
+from central.storage import storage_from_settings
 from central.config import settings
 from central.database import get_db
 from central.security import MANAGEMENT, require
