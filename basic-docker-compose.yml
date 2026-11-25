@@ -4,5 +4,5 @@
 name: wh-001
 
 include:
-  - path: docker/composes/compose-warehouse.yml
-    env_file: docker/components/wh_001/.env
+  - path: infrastructure/docker/composes/compose-warehouse.yml
+    env_file: infrastructure/docker/components/wh_001/.env

@@ -7,6 +7,8 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["AUTO_CREATE_TABLES"] = "false"
 os.environ["WAREHOUSE_ID"] = "WH-TEST"
 os.environ["CACHE_ENABLED"] = "true"
+os.environ["AUTH_ENABLED"] = "false"
+os.environ["CATALOG_STRICT"] = "false"
 
 import pytest  # noqa: E402
 import redis  # noqa: E402

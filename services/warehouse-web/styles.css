@@ -1,0 +1,9 @@
+/* Ajustes propios de la página de bodega (el resto viene de ui/ui.css). */
+
+.stock-figure { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.stock-figure .kpi-value { font-size: 44px; }
+.product-picked { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-3); }
+.system-line { font-size: var(--text-xs); color: var(--text-3); line-height: 1.6; }
+.type-hint { min-height: 20px; color: var(--text-2); font-size: var(--text-sm); }
+.cache-line { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-sm); color: var(--text-2); }
+.cache-line .icon { margin-top: 2px; }

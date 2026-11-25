@@ -19,8 +19,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
-$WarehouseCompose = "docker/composes/compose-warehouse.yml"
-$CentralCompose = "docker/composes/compose-central.yml"
+$WarehouseCompose = "infrastructure/docker/composes/compose-warehouse.yml"
+$CentralCompose = "infrastructure/docker/composes/compose-central.yml"
 $PlatformNetwork = "warehouse_platform"
 
 function Initialize-Network {
@@ -30,14 +30,14 @@ function Initialize-Network {
 }
 
 function Get-Warehouses {
-    Get-ChildItem -Path "docker/components" -Directory -Filter "wh_*" | Sort-Object Name | ForEach-Object { $_.Name }
+    Get-ChildItem -Path "infrastructure/docker/components" -Directory -Filter "wh_*" | Sort-Object Name | ForEach-Object { $_.Name }
 }
 
 function Invoke-WarehouseCompose([string]$Warehouse, [string[]]$ComposeArgs) {
-    $envFile = "docker/components/$Warehouse/.env"
+    $envFile = "infrastructure/docker/components/$Warehouse/.env"
     if (-not (Test-Path $envFile)) { throw "No existe $envFile (bodegas: $((Get-Warehouses) -join ', '))" }
     $dockerArgs = @("compose", "--env-file", $envFile)
-    $runtimeEnv = "docker/components/$Warehouse/runtime.env"
+    $runtimeEnv = "infrastructure/docker/components/$Warehouse/runtime.env"
     if (Test-Path $runtimeEnv) { $dockerArgs += @("--env-file", $runtimeEnv) }
     if ($Warehouse -eq "central") {
         $dockerArgs += @("-f", $CentralCompose, "-p", "central")

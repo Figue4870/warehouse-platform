@@ -15,7 +15,7 @@ spec.loader.exec_module(new_warehouse)
 @pytest.fixture
 def components(tmp_path):
     for name in ("wh_001", "wh_002", "wh_003"):
-        shutil.copytree(ROOT / "docker" / "components" / name, tmp_path / name)
+        shutil.copytree(ROOT / "infrastructure" / "docker" / "components" / name, tmp_path / name)
     return tmp_path
 
 
@@ -48,7 +48,7 @@ def test_salta_los_puertos_ocupados(components):
 
 
 def test_la_bodega_nueva_tiene_su_propia_clave_de_heartbeat_y_queda_registrada(components):
-    shutil.copytree(ROOT / "docker" / "components" / "central", components / "central")
+    shutil.copytree(ROOT / "infrastructure" / "docker" / "components" / "central", components / "central")
     created = env(new_warehouse.create_warehouse("WH-004", components))
     template = env(components / "wh_003" / ".env")
     assert len(created["HEARTBEAT_SECRET"]) >= 16 and created["HEARTBEAT_SECRET"] != template["HEARTBEAT_SECRET"]
@@ -58,8 +58,8 @@ def test_la_bodega_nueva_tiene_su_propia_clave_de_heartbeat_y_queda_registrada(c
 
 
 def test_las_claves_de_desarrollo_coinciden_entre_bodegas_y_central():
-    central = env(ROOT / "docker" / "components" / "central" / ".env")
+    central = env(ROOT / "infrastructure" / "docker" / "components" / "central" / ".env")
     registry = dict(item.split("=", 1) for item in central["WAREHOUSE_HEARTBEAT_SECRETS"].split(","))
     for name in ("wh_001", "wh_002", "wh_003"):
-        wh = env(ROOT / "docker" / "components" / name / ".env")
+        wh = env(ROOT / "infrastructure" / "docker" / "components" / name / ".env")
         assert registry[wh["WH_ID"]] == wh["HEARTBEAT_SECRET"], f"{name}: la central tiene otra clave"

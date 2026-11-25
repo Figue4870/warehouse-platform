@@ -23,7 +23,7 @@ central (modelo de lectura) -> central_exporter (cada 60 s)
         -> Athena (workgroup <proyecto>-reportes, resultados en <bucket>/athena-results/)
 ```
 
-- Las columnas de cada tabla están en `src/central/central/analytics/tables.json`; Terraform crea
+- Las columnas de cada tabla están en `services/central/central/analytics/tables.json`; Terraform crea
   las tablas de Glue con ellas y el exportador escribe esos mismos campos.
 - Las tablas están particionadas por día (`dt`) con *partition projection*: Athena encuentra las
   carpetas sin crawlers y una consulta de 30 días solo lee 30 carpetas.
@@ -34,7 +34,7 @@ central (modelo de lectura) -> central_exporter (cada 60 s)
   Lab una política de la organización no deja a Terraform leer la configuración de los buckets.
 - La central usa las credenciales de **LabRole** del Learner Lab (no se guardan llaves).
 
-## Los reportes (`src/central/central/analytics/sql/`)
+## Los reportes (`services/central/central/analytics/sql/`)
 
 | Reporte | Pregunta |
 |---|---|

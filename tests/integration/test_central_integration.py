@@ -1,35 +1,6 @@
 """Fase 7 contra la plataforma real: bodega WH-001 + central, cada una en su proyecto de Docker."""
 
-import os
-import time
-
-import httpx
-import pytest
-
-CENTRAL_URL = os.getenv("CENTRAL_URL", "http://localhost:8090")
-
-
-@pytest.fixture(scope="module")
-def central():
-    try:
-        httpx.get(f"{CENTRAL_URL}/health", timeout=3)
-    except httpx.HTTPError:
-        pytest.skip(f"La central no responde en {CENTRAL_URL}. Levántala con ./manage_warehouse.sh start central.")
-    with httpx.Client(base_url=CENTRAL_URL, timeout=10) as client:
-        yield client
-
-
-def wait_until(check, timeout=60.0, every=1.0, what="la central"):
-    start, last = time.time(), None
-    while time.time() - start < timeout:
-        try:
-            last = check()
-            if last:
-                return last
-        except (httpx.HTTPError, KeyError, ValueError) as error:
-            last = error
-        time.sleep(every)
-    pytest.fail(f"Se acabó el tiempo esperando a {what}: {last}")
+from it_helpers import wait_until
 
 
 def test_un_movimiento_en_la_bodega_llega_a_la_central(central, api, new_product):

@@ -30,5 +30,5 @@ Los datos exportados a S3 se descargaron con CloudShell para guardarlos.
 
 ## Para repetirla
 
-Seguir `terraform/README.md`. Al terminar, además de `terraform destroy`, borrar el bucket
+Seguir `infrastructure/terraform/README.md`. Al terminar, además de `terraform destroy`, borrar el bucket
 `warehouse-platform-datos-<cuenta>` en la consola de S3 (*Empty* y luego *Delete*).

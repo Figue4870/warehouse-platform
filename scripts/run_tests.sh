@@ -17,7 +17,7 @@ record() { ORDER+=("$1"); RESULTS["$1"]=$2; }
 step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 
 if ! $PYTHON -c "import pytest, cryptography, fastapi, sqlalchemy, httpx, boto3" 2>/dev/null; then
-    echo "Faltan librerías de Python: $PYTHON -m pip install -r src/backend/app/requirements-dev.txt"
+    echo "Faltan librerías de Python: $PYTHON -m pip install -r services/warehouse/requirements-dev.txt"
     exit 1
 fi
 
@@ -34,7 +34,7 @@ record "Sin Docker (pytest)" $([ $? -eq 0 ] && echo OK || echo FALLÓ)
 step "3/4 Terraform (validate + test)"
 TF=$(command -v terraform || command -v tofu || true)
 if [ -n "$TF" ]; then
-    (cd terraform && $TF init -backend=false -input=false >/dev/null && $TF validate && $TF test)
+    (cd infrastructure/terraform && $TF init -backend=false -input=false >/dev/null && $TF validate && $TF test)
     record "Terraform (validate + test)" $([ $? -eq 0 ] && echo OK || echo FALLÓ)
 else
     echo "Terraform no está instalado: se omite"

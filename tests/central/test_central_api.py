@@ -44,4 +44,7 @@ def test_reportes_globales(central_client, apply, wh1, wh2):
 
 def test_tablero_web(central_client):
     page = central_client.get("/dashboard")
-    assert page.status_code == 200 and "Plataforma Central" in page.text and "/global/inventory" in page.text
+    assert page.status_code == 200 and "Plataforma Central" in page.text and "/static/dashboard.js" in page.text
+    script = central_client.get("/static/dashboard.js")
+    assert script.status_code == 200 and "/global/inventory" in script.text
+    assert central_client.get("/ui/ui.css").status_code == 200

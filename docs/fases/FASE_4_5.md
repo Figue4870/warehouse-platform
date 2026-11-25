@@ -20,8 +20,8 @@
           PostgreSQL + Redis + RabbitMQ + workers (Fase 3)
 ```
 
-Todas las bodegas usan la misma plantilla `docker/composes/compose-warehouse.yml`; lo que cambia es
-su `.env` (`docker/components/wh_00X/.env`). Cada una es un proyecto de Docker aparte (`-p wh-001`),
+Todas las bodegas usan la misma plantilla `infrastructure/docker/composes/compose-warehouse.yml`; lo que cambia es
+su `.env` (`infrastructure/docker/components/wh_00X/.env`). Cada una es un proyecto de Docker aparte (`-p wh-001`),
 con su propia red y volúmenes.
 
 ## Cómo levantarlas
@@ -97,10 +97,10 @@ escala independiente. Una base única sería un punto único de falla.
 
 ## Terraform (AWS Learner Lab)
 
-`terraform/` crea un security group y una EC2 Ubuntu por bodega. Al arrancar, cada máquina instala
+`infrastructure/terraform/` crea un security group y una EC2 Ubuntu por bodega. Al arrancar, cada máquina instala
 Docker, clona el repositorio y ejecuta `./manage_warehouse.sh start wh_00X`, lo mismo que se hizo a
 mano en el laboratorio. PostgreSQL, Redis y AMQP no se abren a Internet. Usa la llave `vockey` y el
-perfil `LabInstanceProfile` (el Learner Lab no deja crear roles). Pasos en `terraform/README.md`.
+perfil `LabInstanceProfile` (el Learner Lab no deja crear roles). Pasos en `infrastructure/terraform/README.md`.
 
 ## Integración continua
 

@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = [ROOT / "src" / "frontend" / "app" / "index.html", ROOT / "src" / "central" / "central" / "static" / "dashboard.html"]
-SCRIPTS = [ROOT / "src" / "frontend" / "app" / "app.js"]
+PAGES = [ROOT / "services" / "warehouse-web" / "index.html", ROOT / "services" / "central" / "central" / "static" / "dashboard.html"]
+SCRIPTS = [ROOT / "services" / "warehouse-web" / "app.js", ROOT / "services" / "central" / "central" / "static" / "dashboard.js",
+           ROOT / "services" / "web-ui" / "ui.js"]
 # Textos técnicos que no deben aparecer en pantalla
 FORBIDDEN = ["Fase", "FastAPI", "CQRS", "(Saga", "Warehouse Cloud Platform ·", "consistencia eventual",
              "modelo de lectura", "asíncronos", "report-worker", "API + PostgreSQL", "RabbitMQ + workers"]
@@ -69,8 +70,16 @@ def test_los_mensajes_del_frontend_no_mencionan_fases(script):
 
 
 def test_lo_util_para_la_demo_se_mantiene():
-    index = visible_text(PAGES[0])
-    assert "HIT" in index and "MISS" in index
-    assert "Nuevo producto" in index and "Registrar movimiento" in index
-    dashboard = visible_text(PAGES[1])
-    assert "Plataforma Central" in dashboard and "Nueva transferencia" in dashboard and "Reportes con Athena" in dashboard
+    warehouse = SCRIPTS[0].read_text(encoding="utf-8")
+    for text in ("Registrar movimiento", "(HIT)", "(MISS)", "Reportar desfase", "Producto nuevo", "Catálogo", "Transferencias"):
+        assert text in warehouse, text
+    central = SCRIPTS[1].read_text(encoding="utf-8")
+    for text in ("Plataforma Central", "Nueva transferencia", "Reportes con Athena", "Registrar bodega", "Crear credenciales"):
+        assert text in central, text
+
+
+def test_las_vistas_dependen_del_rol():
+    warehouse = SCRIPTS[0].read_text(encoding="utf-8")
+    central = SCRIPTS[1].read_text(encoding="utf-8")
+    assert "REGISTRADOR: [" in warehouse and "ADMIN_BODEGA: [" in warehouse
+    assert "ADMIN_GLOBAL: [" in central and "LIDER: [" in central
