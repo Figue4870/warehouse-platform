@@ -1,5 +1,4 @@
--- Migración de la central a Batch, contratos con Lambda y envíos con Servientrega. Si la base es nueva no hace falta.
---   docker exec central_postgres psql -U postgres -d central_db -f /db/migrations/central_005_batch_contratos_envios.sql
+-- Migración de la central a Batch, contratos con Lambda y envíos con Servientrega.
 BEGIN;
 
 ALTER TABLE transfers DROP CONSTRAINT IF EXISTS ck_transfers_state;

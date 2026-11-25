@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Pruebas en Linux. En Windows: .\scripts\run_tests.ps1
-#   ./scripts/run_tests.sh                -> pruebas sin Docker + Terraform
-#   ./scripts/run_tests.sh --integracion  -> además, contra la plataforma en Docker
-# Pasos: 1) heartbeat, frontend y bodegas nuevas  2) todas las pruebas sin Docker
-#        3) terraform validate + terraform test (AWS simulado)  4) integración con Docker (opcional)
+
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

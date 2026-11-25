@@ -10,7 +10,6 @@
    3. terraform validate + terraform test (proveedor de AWS simulado, no crea recursos)
    4. Integración con Docker (solo con -Integracion)
 
- Requisito: pip install -r services/warehouse/requirements-dev.txt
 #>
 param(
     [switch]$Integracion

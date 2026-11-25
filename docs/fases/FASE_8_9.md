@@ -155,12 +155,5 @@ depender del recurso y la Lambda recibe la IP de la central sin dependencia circ
 
 ## Probar
 
-```powershell
-# Reporte de hoy, sin esperar a las 23:00
-curl -X POST http://localhost:8090/batch/runs -H "Authorization: Bearer <token del líder>" -H "Content-Type: application/json" -d "{}"
-# Contrato de ejemplo
-python scripts/contratos/generar_contrato.py -o contrato.pdf
-```
-
 Pruebas: `tests/central/test_batch_lambda_contracts.py`, `tests/central/test_saga.py` (envíos) y
 `tests/central/test_external_mocks.py`.
