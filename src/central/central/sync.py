@@ -7,7 +7,7 @@ import httpx
 from platform_common.events import EventEnvelope
 from sqlalchemy.orm import sessionmaker
 
-from central.config import configured_api_urls, settings
+from central.config import settings, warehouse_registry
 from central.models import SyncRunEntity, WarehouseEntity
 from central.projection import APPLIED, apply_event, apply_snapshot, as_aware, get_or_create_warehouse, now_utc
 
@@ -35,7 +35,8 @@ class WarehouseClient:
 
 
 def api_url_for(warehouse: WarehouseEntity) -> str | None:
-    return configured_api_urls().get(warehouse.warehouse_id) or warehouse.api_url
+    registered = warehouse_registry().get(warehouse.warehouse_id)
+    return registered["api_url"] if registered else warehouse.api_url
 
 
 def _finish(session_factory: sessionmaker, warehouse_id: str, kind: str, status: str, applied: int, detail: str | None, started: datetime):
@@ -61,7 +62,7 @@ def catch_up(session_factory: sessionmaker, warehouse_id: str, client: Warehouse
             after = warehouse.watermark_sequence
             db.commit()
         if not api_url:
-            raise RuntimeError("No se conoce la URL de la bodega (aún no envía heartbeats)")
+            raise RuntimeError("No se conoce la URL de la bodega (agrégala en WAREHOUSE_API_URLS)")
         while True:
             page = client.events_after(api_url, after, settings.SYNC_PAGE_SIZE)
             oldest = page.get("oldest_available_sequence")
@@ -131,7 +132,7 @@ def reconcile_once(session_factory: sessionmaker, client: WarehouseClient, now: 
     now = now or datetime.now(timezone.utc)
     actions = []
     with session_factory() as db:
-        for warehouse_id in configured_api_urls():
+        for warehouse_id in warehouse_registry():
             get_or_create_warehouse(db, warehouse_id)
         db.commit()
         warehouses = db.query(WarehouseEntity).order_by(WarehouseEntity.warehouse_id).all()

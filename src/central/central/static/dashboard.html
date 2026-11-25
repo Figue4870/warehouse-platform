@@ -11,7 +11,6 @@
   body { background:var(--bg); color:var(--text); padding:1.5rem; }
   header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;
            border-bottom:1px solid var(--border); padding-bottom:1rem; margin-bottom:1.5rem; }
-  .sub { color:var(--muted); font-size:.88rem; margin-top:.25rem; }
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:1.2rem; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1.2rem; min-width:0; }
   .wide { grid-column:span 2; }
@@ -24,6 +23,7 @@
   .whs { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px,1fr)); gap:.8rem; }
   .wh { border:1px solid var(--border); border-radius:10px; padding:.8rem; }
   .wh b { font-size:1.05rem; } .wh small { color:var(--muted); display:block; margin-top:.3rem; }
+  .wh small.alarm { color:var(--red); font-weight:700; }
   table { width:100%; border-collapse:collapse; font-size:.9rem; }
   th, td { text-align:left; padding:.5rem; border-bottom:1px solid var(--border); vertical-align:top; }
   th { color:var(--muted); font-weight:600; }
@@ -48,7 +48,6 @@
 <header>
   <div>
     <h1>Plataforma Central</h1>
-    <div class="sub">CQRS (Fase 7) · Saga de transferencias (Fase 6) · Reportes (modelo de lectura y Athena)</div>
   </div>
   <div class="row">
     <span id="health" class="badge warn">conectando…</span>
@@ -64,12 +63,12 @@
   </section>
 
   <section class="card">
-    <h2>Inventario global <span class="muted" style="font-size:.8rem">(consistencia eventual)</span></h2>
+    <h2>Inventario global</h2>
     <div class="scroll"><table id="inventory"></table></div>
   </section>
 
   <section class="card">
-    <h2>Nueva transferencia (Saga)</h2>
+    <h2>Nueva transferencia</h2>
     <div class="form">
       <label>SKU <input id="t-sku" placeholder="P-001"></label>
       <label>Origen <select id="t-src"></select></label>
@@ -91,7 +90,7 @@
   </section>
 
   <section class="card">
-    <h2>Reportes (modelo de lectura)</h2>
+    <h2>Reportes</h2>
     <div class="row" style="margin-bottom:.6rem">
       <button class="ghost" data-report="/reports/top-products?days=30">Top productos</button>
       <button class="ghost" data-report="/reports/sales-by-day?days=30">Ventas por día</button>
@@ -143,8 +142,10 @@ async function loadWarehouses() {
     <div class="wh"><b>${esc(w.warehouse_id)}</b>
       <span class="badge ${w.status === "ONLINE" ? "ok" : w.status === "OFFLINE" ? "bad" : "warn"}">${esc(w.status)}</span>
       <small>${esc(w.note)}</small>
-      <small>eventos: ${esc(w.watermark_sequence)} / ${esc(w.reported_sequence)} · contacto hace ${ago(w.last_heartbeat_at)}</small>
-    </div>`).join("") || `<span class="muted">Ninguna bodega ha enviado heartbeats todavía</span>`;
+      <small>eventos: ${esc(w.watermark_sequence)} / ${esc(w.reported_sequence)} · respuesta verificada hace ${ago(w.last_heartbeat_at)}</small>
+      ${w.heartbeat && w.heartbeat.answered_by ? `<small>respondió: ${esc(w.heartbeat.answered_by)}</small>` : ""}
+      ${w.heartbeat && w.heartbeat.rejected_total ? `<small class="alarm">respuestas rechazadas: ${esc(w.heartbeat.rejected_total)}</small>` : ""}
+    </div>`).join("") || `<span class="muted">No hay bodegas registradas</span>`;
   for (const id of ["t-src", "t-dst"]) {
     const select = $(id), current = select.value;
     select.innerHTML = list.map((w) => `<option>${esc(w.warehouse_id)}</option>`).join("");

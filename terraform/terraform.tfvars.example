@@ -15,5 +15,8 @@ repo_branch = "main"
 # Configuracion de RabbitMQ central
 central_rabbit_password = "cambiar-clave"
 
+# Heartbeat
+heartbeat_secret = "cambiar-secreto-heartbeat"
+
 # Reportes con Athena
 # enable_analytics = true

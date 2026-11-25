@@ -13,6 +13,10 @@ class Settings(BaseSettings):
 
     # Una bodega sin heartbeat hace más de esto se marca OFFLINE ("datos posiblemente desactualizados")
     ONLINE_AFTER_SECONDS: int = 45
+    HEARTBEAT_POLL_SECONDS: int = 15              # cada cuánto la central le pregunta a cada bodega
+    HEARTBEAT_TIMEOUT_SECONDS: float = 3.0        # espera máxima por la respuesta de una bodega
+    # Clave del heartbeat de cada bodega: "WH-001=clave,WH-002=clave"
+    WAREHOUSE_HEARTBEAT_SECRETS: str = ""
     # Cada cuánto el reconciliador revisa huecos de secuencia y bodegas nuevas
     RECONCILE_SECONDS: int = 15
     # Cuánto esperar antes de considerar que un hueco NO se va a llenar solo (y pedirlo por HTTP)
@@ -20,7 +24,7 @@ class Settings(BaseSettings):
     SYNC_HTTP_TIMEOUT_SECONDS: float = 5.0
     SYNC_PAGE_SIZE: int = 500
     LIVE_QUERY_TIMEOUT_SECONDS: float = 2.0       # consulta "en vivo" a las bodegas (alternativa A)
-    # Opcional: "WH-001=http://10.0.1.10:8001,WH-002=..." (si no, se aprenden de los heartbeats)
+    # Opcional: "WH-001=http://10.0.1.10:8001,WH-002=..." (por defecto, http://lb_warehouse_<id>:80)
     WAREHOUSE_API_URLS: str = ""
 
     WORKER_MAX_RETRIES: int = 5
@@ -53,3 +57,22 @@ def configured_api_urls() -> dict[str, str]:
         warehouse_id, url = item.split("=", 1)
         urls[warehouse_id.strip()] = url.strip().rstrip("/")
     return urls
+
+
+def default_api_url(warehouse_id: str) -> str:
+    """Balanceador de la bodega en la red de Docker."""
+    return f"http://lb_warehouse_{warehouse_id}:80"
+
+
+def heartbeat_secrets() -> dict[str, str]:
+    """Clave del heartbeat por bodega, leída de WAREHOUSE_HEARTBEAT_SECRETS."""
+    from platform_common.secure_heartbeat import parse_secrets
+
+    return parse_secrets(settings.WAREHOUSE_HEARTBEAT_SECRETS)
+
+
+def warehouse_registry() -> dict[str, dict]:
+    """Bodegas que la central consulta: URL de su API y clave del heartbeat (None si no la tiene)."""
+    urls, keys = configured_api_urls(), heartbeat_secrets()
+    return {wh: {"api_url": urls.get(wh) or default_api_url(wh), "secret": keys.get(wh)}
+            for wh in sorted(set(urls) | set(keys))}

@@ -7,6 +7,7 @@ os.environ["AUTO_CREATE_TABLES"] = "false"
 
 import itertools  # noqa: E402
 import uuid  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
 from datetime import datetime, timedelta, timezone  # noqa: E402
 
 import pytest  # noqa: E402
@@ -44,6 +45,15 @@ def central_client(central_sf):
     app.dependency_overrides.clear()
 
 
+@dataclass
+class Beat:
+    """Respuesta de heartbeat ya verificada, para aplicarla directamente en las pruebas."""
+
+    warehouse_id: str
+    status: dict
+    api_url: str
+
+
 class EventFactory:
     """Arma eventos como los que publica una bodega (con secuencia sin huecos)."""
 
@@ -72,7 +82,8 @@ class EventFactory:
             "created_at": datetime.now(timezone.utc).isoformat()}, **kw)
 
     def heartbeat(self, last_sequence, api_url="http://wh-001", outbox_pending=0):
-        return self.make("WAREHOUSE_HEARTBEAT", {"last_sequence": last_sequence, "api_url": api_url, "outbox_pending": outbox_pending}, sequence=0)
+        return Beat(self.warehouse_id, {"last_sequence": last_sequence, "outbox_pending": outbox_pending,
+                                        "instance": f"{self.warehouse_id}-api-1"}, api_url)
 
 
 @pytest.fixture
@@ -87,14 +98,18 @@ def wh2():
 
 @pytest.fixture
 def apply(central_sf):
-    """apply(evento1, evento2, ...) -> lista de resultados (applied / duplicate / heartbeat)."""
-    from central.projection import apply_event
+    """apply(evento1, evento2, ...) -> lista de resultados (applied / duplicate / ignored / heartbeat)."""
+    from central.projection import apply_event, record_heartbeat
 
     def _apply(*events, source="stream"):
         results = []
         for event in events:
             with central_sf() as db:
-                results.append(apply_event(db, event, source))
+                if isinstance(event, Beat):
+                    record_heartbeat(db, event.warehouse_id, event.status, api_url=event.api_url)
+                    results.append("heartbeat")
+                else:
+                    results.append(apply_event(db, event, source))
                 db.commit()
         return results
 

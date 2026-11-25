@@ -19,16 +19,16 @@ La Fase 7 va antes que la 6 porque las transferencias (Saga) las orquesta la cen
 ```text
 basic-docker-compose.yml        una bodega (WH-001) con un solo comando
 manage.ps1 / manage_warehouse.sh   levantar y apagar bodegas y la central (Windows / Linux-EC2)
-docker/composes/                plantilla de una bodega y compose de la central
+docker/composes/                plantilla de una bodega, de un nodo de API y compose de la central
 docker/components/*/.env        lo que distingue a cada bodega y a la central
 docker/nginx/lb.conf            balanceador de carga
 db/                             schema.sql (bodega), central_schema.sql, migrations/, seed.sql
-src/common/                     librería compartida: eventos, comandos y RabbitMQ confiable
+src/common/                     librería compartida: eventos, comandos, RabbitMQ confiable y heartbeat cifrado
 src/backend/app/                API de bodega y workers (incluye command_worker de la Saga)
-src/central/                    central: API global, projector, reconciler, Saga, exportador, tablero
+src/central/                    central: API global, projector, reconciler, heartbeat, Saga, exportador, tablero
 src/frontend/app/               página web de la bodega
-scripts/                        dlq.py, new_warehouse.py, athena_report.py
-terraform/                      AWS Learner Lab: EC2 por bodega, central y Athena
+scripts/                        dlq.py, new_warehouse.py, athena_report.py, run_tests.ps1/.sh
+terraform/                      AWS Learner Lab: EC2 por bodega, central, ALB de WH-002 y Athena
 tests/                          unit, central, integration, http, load
 ```
 
@@ -63,6 +63,9 @@ pip install -r src/backend/app/requirements-dev.txt
 pytest tests/unit tests/central   # sin Docker
 pytest tests/integration          # con la central, WH-001 y WH-002 levantadas
 ```
+
+En un solo comando: `.\scripts\run_tests.ps1` o `./scripts/run_tests.sh` (con `-Integracion` /
+`--integracion` también contra Docker).
 
 Colecciones de peticiones: `tests/http/warehouse-api.http` y `tests/http/central-api.http`.
 Las contraseñas de los `.env` son solo de desarrollo.

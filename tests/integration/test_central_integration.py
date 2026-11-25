@@ -51,4 +51,5 @@ def test_la_bodega_aparece_online_y_al_dia(central, api, new_product):
         return wh and wh["status"] == "ONLINE" and wh["events_missing"] == 0 and wh["watermark_sequence"] == wh["reported_sequence"] and wh
 
     wh = wait_until(caught_up, what="que WH-001 quede ONLINE y sin eventos pendientes")
-    assert wh["api_url"]  # aprendida del heartbeat: la central sabe cómo llamar a la bodega
+    assert wh["api_url"]
+    assert wh["heartbeat"]["authenticated"] and wh["heartbeat"]["answered_by"].startswith("WH-001")

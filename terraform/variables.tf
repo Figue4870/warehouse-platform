@@ -11,6 +11,12 @@ variable "availability_zone" {
   default     = "us-east-1a"
 }
 
+variable "second_availability_zone" {
+  description = "Segunda zona de disponibilidad, usada por el ALB."
+  type        = string
+  default     = "us-east-1b"
+}
+
 variable "project_name" {
   description = "Prefijo de nombres y etiquetas."
   type        = string
@@ -34,6 +40,12 @@ variable "instance_type" {
   description = "Tipo de EC2 por bodega. t3.small (2 GB) alcanza para los 13 contenedores de una bodega; t3.micro (1 GB) se queda corto."
   type        = string
   default     = "t3.small"
+
+  # Tipos de instancia que permite el Learner Lab
+  validation {
+    condition     = can(regex("^t[23]a?\\.(nano|micro|small|medium|large)$", var.instance_type))
+    error_message = "Usa un tipo t2/t3 (nano, micro, small, medium o large): el Learner Lab no permite otros."
+  }
 }
 
 variable "root_volume_size_gb" {
@@ -72,6 +84,17 @@ variable "central_instance_type" {
   description = "Tipo de EC2 de la plataforma central."
   type        = string
   default     = "t3.small"
+
+  validation {
+    condition     = can(regex("^t[23]a?\\.(nano|micro|small|medium|large)$", var.central_instance_type))
+    error_message = "Usa un tipo t2/t3 (nano, micro, small, medium o large): el Learner Lab no permite otros."
+  }
+}
+
+variable "central_private_ip_host" {
+  description = "Host de la subred que se usa como IP privada fija de la central (200 -> x.x.x.200). Debe estar libre."
+  type        = number
+  default     = 200
 }
 
 variable "central_port" {
@@ -105,6 +128,18 @@ variable "central_rabbit_password" {
   }
 }
 
+# heartbeat
+variable "heartbeat_secret" {
+  description = "Secreto del que se derivan las claves del heartbeat de cada bodega. No se copia a ninguna máquina."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]{16,}$", var.heartbeat_secret)) && var.heartbeat_secret != "cambiar-secreto-heartbeat"
+    error_message = "Usa al menos 16 letras, números, '_' o '-', y no dejes el valor del ejemplo."
+  }
+}
+
 # reportes con Athena
 variable "enable_analytics" {
   description = "Crear S3 + Glue + Athena para los reportes (false = solo EC2)."
@@ -118,6 +153,7 @@ variable "warehouses" {
     Bodegas a desplegar: una EC2 por bodega. La clave es la carpeta en docker/components/.
     instance_type (opcional) permite que CADA bodega tenga el tamaño que necesita (Fase 4:
     escalamiento independiente). Si no se pone, se usa var.instance_type.
+    api_nodes (opcional): nodos adicionales solo con la API, detrás de un ALB.
   EOT
   type = map(object({
     wh_id            = string
@@ -125,11 +161,29 @@ variable "warehouses" {
     web_port         = number
     rabbit_mgmt_port = number
     instance_type    = optional(string)
+    api_nodes        = optional(number, 0)
   }))
   default = {
     wh_001 = { wh_id = "WH-001", api_port = 8001, web_port = 8081, rabbit_mgmt_port = 15673 }
-    # WH-002 es la bodega de alta demanda del ejercicio (800 req/s): máquina más grande, solo ella
-    wh_002 = { wh_id = "WH-002", api_port = 8002, web_port = 8082, rabbit_mgmt_port = 15674, instance_type = "t3.medium" }
+    # WH-002 es la bodega de alta demanda del ejercicio (800 req/s): dos t3.small detrás de un ALB
+    wh_002 = { wh_id = "WH-002", api_port = 8002, web_port = 8082, rabbit_mgmt_port = 15674, api_nodes = 1 }
     wh_003 = { wh_id = "WH-003", api_port = 8003, web_port = 8083, rabbit_mgmt_port = 15675 }
+  }
+
+  validation {
+    condition = alltrue([for wh in values(var.warehouses) :
+    wh.instance_type == null ? true : can(regex("^t[23]a?\\.(nano|micro|small|medium|large)$", wh.instance_type))])
+    error_message = "Usa tipos t2/t3 (nano, micro, small, medium o large): el Learner Lab no permite otros."
+  }
+
+  # El Learner Lab permite como máximo 9 instancias a la vez (central incluida)
+  validation {
+    condition     = 1 + length(var.warehouses) + sum(concat([0], [for wh in values(var.warehouses) : wh.api_nodes])) <= 9
+    error_message = "El Learner Lab permite máximo 9 máquinas a la vez: central + bodegas + api_nodes no puede pasar de 9."
+  }
+
+  validation {
+    condition     = alltrue([for wh in values(var.warehouses) : wh.api_nodes >= 0 && wh.api_nodes <= 3])
+    error_message = "api_nodes debe estar entre 0 y 3."
   }
 }

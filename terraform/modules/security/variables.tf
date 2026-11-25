@@ -13,3 +13,13 @@ variable "warehouses" {
     rabbit_mgmt_port = number
   }))
 }
+variable "load_balanced" {
+  description = "Bodegas con ALB: puertos de API, PostgreSQL y Redis"
+  type = map(object({
+    wh_id      = string
+    api_port   = number
+    db_port    = number
+    redis_port = number
+  }))
+  default = {}
+}

@@ -7,7 +7,6 @@ INVENTORY_MOVEMENT_RECORDED = "INVENTORY_MOVEMENT_RECORDED"  # inventory.movemen
 STOCK_DEPLETED = "STOCK_DEPLETED"                            # stock.depleted   (alerta: agotado)
 STOCK_DISCREPANCY = "STOCK_DISCREPANCY"                      # stock.discrepancy (alerta: desfase)
 REPORT_REQUESTED = "REPORT_REQUESTED"                        # report.requested
-WAREHOUSE_HEARTBEAT = "WAREHOUSE_HEARTBEAT"                  # warehouse.heartbeat (Fase 7, no pasa por el outbox)
 
 # Fase 6 — respuestas de la bodega a los comandos de la Saga (contrato en platform_common/commands.py)
 from platform_common.commands import (  # noqa: E402,F401

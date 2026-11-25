@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Gestión de bodegas (Linux / EC2). En Windows: .\manage.ps1
 #   ./manage_warehouse.sh init|start|stop|restart|reset|status|logs|list [central|wh_001|all]
+#   ./manage_warehouse.sh start-api|stop-api wh_002
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -8,6 +9,7 @@ ACTION=${1:-help}
 TARGET=${2:-}
 SERVICE=${3:-}
 WAREHOUSE_COMPOSE="docker/composes/compose-warehouse.yml"
+API_NODE_COMPOSE="docker/composes/compose-warehouse-api.yml"
 CENTRAL_COMPOSE="docker/composes/compose-central.yml"
 PLATFORM_NETWORK="warehouse_platform"
 
@@ -15,7 +17,7 @@ PLATFORM_NETWORK="warehouse_platform"
 DOCKER="docker"
 if ! docker info >/dev/null 2>&1; then DOCKER="sudo docker"; fi
 
-show_help() { sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'; }
+show_help() { sed -n '3,4p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # Red compartida entre la central y las bodegas (Fase 7)
 ensure_network() { $DOCKER network inspect "$PLATFORM_NETWORK" >/dev/null 2>&1 || $DOCKER network create "$PLATFORM_NETWORK" >/dev/null; }
@@ -30,6 +32,16 @@ compose_wh() {
     local args=(compose --env-file "$env_file")
     [ -f "docker/components/${wh}/runtime.env" ] && args+=(--env-file "docker/components/${wh}/runtime.env")
     $DOCKER "${args[@]}" -f "$WAREHOUSE_COMPOSE" -p "${wh//_/-}" "$@"
+}
+
+# Nodo adicional de API de una bodega (usa PostgreSQL y Redis del nodo principal: PRIMARY_HOST)
+compose_api_node() {
+    local wh=$1; shift
+    local env_file="docker/components/${wh}/.env"
+    [ -f "$env_file" ] || { echo "Error: no existe $env_file"; exit 1; }
+    local args=(compose --env-file "$env_file")
+    [ -f "docker/components/${wh}/runtime.env" ] && args+=(--env-file "docker/components/${wh}/runtime.env")
+    $DOCKER "${args[@]}" -f "$API_NODE_COMPOSE" -p "${wh//_/-}-api" "$@"
 }
 
 compose_central() {
@@ -63,6 +75,12 @@ case "$ACTION" in
         echo "Listo. (Cierra y abre la sesión para usar docker sin sudo.)"
         ;;
     start)   for_targets start_one ;;
+    start-api)
+        [ -n "$TARGET" ] || { echo "Uso: $0 start-api wh_002"; exit 1; }
+        echo "==> Iniciando las APIs de $TARGET (máquina solo API)"; compose_api_node "$TARGET" up -d --build ;;
+    stop-api)
+        [ -n "$TARGET" ] || { echo "Uso: $0 stop-api wh_002"; exit 1; }
+        compose_api_node "$TARGET" stop ;;
     stop)    for_targets stop_one ;;
     restart) for_targets restart_one ;;
     reset)   for_targets reset_one ;;

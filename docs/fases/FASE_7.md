@@ -12,13 +12,14 @@ pierda información** aunque se caiga la central, una bodega o la red entre ella
 BODEGA (cada una)                                   CENTRAL
 API -> PostgreSQL (inventario + outbox)
           |
-     outbox_relay (secuencia 1,2,3... + heartbeat)
+     outbox_relay (secuencia 1,2,3...)
           |
      RabbitMQ local --cola wh.central-forward--> central_forwarder --AMQP--> RabbitMQ central
                                                  (ack local solo cuando           |
                                                   la central confirmó)      central_projector --> PostgreSQL central
                                                                                                 (modelo de lectura)
      lb de la bodega <---- /sync/events, /sync/snapshot ---- central_reconciler        |
+     lb de la bodega <---- POST /sync/heartbeat (cifrado) -- central_heartbeat         |
                                                                                    central_api (/global, /reports, /dashboard)
 ```
 
@@ -36,8 +37,10 @@ consultas globales leen la base central, que es una copia derivada y se puede re
 4. **Secuencias y reconciliación:** cada bodega numera sus eventos sin huecos. La central guarda hasta
    dónde tiene todo (*watermark*). Si detecta un hueco, el reconciliador pide lo que falta con
    `GET /sync/events?after_sequence=N`; si la bodega ya no lo tiene, usa `GET /sync/snapshot`.
-5. **Heartbeats:** cada bodega avisa cada 15 s que está viva. Sin heartbeat por 45 s, la central la
-   marca `OFFLINE` y sus datos salen con una advertencia (pueden estar desactualizados).
+5. **Heartbeats:** cada 15 s la central le envía a cada bodega un reto cifrado (AES-256-GCM) que solo
+   puede responder quien tiene la clave de esa bodega (`HEARTBEAT_SECRET` en la bodega,
+   `WAREHOUSE_HEARTBEAT_SECRETS` en la central). Sin una respuesta válida por 45 s, la marca `OFFLINE`
+   y sus datos salen con una advertencia (pueden estar desactualizados).
 
 | Falla | Qué pasa | ¿Se pierde algo? |
 |---|---|---|

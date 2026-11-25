@@ -1,6 +1,7 @@
 """Agrega una bodega nueva copiando la configuración de la última y moviendo sus puertos."""
 
 import re
+import secrets
 import sys
 from pathlib import Path
 
@@ -47,10 +48,34 @@ def create_warehouse(wh_id: str, components: Path = COMPONENTS) -> Path:
             port += 1
         used.add(port)
         text = re.sub(rf"^{key}=\d+$", f"{key}={port}", text, flags=re.M)
+    # Cada bodega tiene su propia clave del heartbeat (no se copia la de la bodega anterior)
+    secret = f"dev-{wh_id.lower().replace('-', '')}-{secrets.token_urlsafe(18)}"
+    if re.search(r"^HEARTBEAT_SECRET=.*$", text, re.M):
+        text = re.sub(r"^HEARTBEAT_SECRET=.*$", f"HEARTBEAT_SECRET={secret}", text, flags=re.M)
+    else:
+        text = text.rstrip("\n") + f"\nHEARTBEAT_SECRET={secret}\n"
     target.mkdir()
     env_file = target / ".env"
     env_file.write_text(text, encoding="utf-8")
+    register_in_central(components, wh_id, secret)
     return env_file
+
+
+def register_in_central(components: Path, wh_id: str, secret: str) -> bool:
+    """Agrega (o reemplaza) la clave de la bodega en WAREHOUSE_HEARTBEAT_SECRETS de la central."""
+    central_env = components / "central" / ".env"
+    if not central_env.exists():
+        return False
+    text = central_env.read_text(encoding="utf-8")
+    match = re.search(r"^WAREHOUSE_HEARTBEAT_SECRETS=(.*)$", text, re.M)
+    if match is None:
+        text = text.rstrip("\n") + f"\nWAREHOUSE_HEARTBEAT_SECRETS={wh_id}={secret}\n"
+    else:
+        entries = [e for e in match.group(1).split(",") if e.strip() and not e.strip().startswith(f"{wh_id}=")]
+        line = "WAREHOUSE_HEARTBEAT_SECRETS=" + ",".join(entries + [f"{wh_id}={secret}"])
+        text = text[:match.start()] + line + text[match.end():]
+    central_env.write_text(text, encoding="utf-8")
+    return True
 
 
 def main():
@@ -63,6 +88,8 @@ def main():
     text = env_file.read_text(encoding="utf-8")
     print(f"Creada {env_file}:")
     print("\n".join(line for line in text.splitlines() if line.split("=")[0] in PORT_KEYS + ["WH_ID"]))
+    print("Clave del heartbeat generada y agregada al registro de la central (docker/components/central/.env).")
+    print("Vuelve a levantar la central para que lea la clave: .\\manage.ps1 start central")
 
 
 if __name__ == "__main__":

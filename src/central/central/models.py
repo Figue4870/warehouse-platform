@@ -17,9 +17,14 @@ class WarehouseEntity(Base):
     __tablename__ = "warehouses"
 
     warehouse_id = Column(String(20), primary_key=True)
-    api_url = Column(String(200))                         # cómo llamar a la bodega (de su heartbeat)
+    api_url = Column(String(200))                         # cómo llamar a la bodega
     first_seen_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     last_heartbeat_at = Column(DateTime(timezone=True))   # último "sigo viva"
+    last_heartbeat_attempt_at = Column(DateTime(timezone=True))           # última pregunta de la central
+    last_heartbeat_error = Column(Text)                                   # causa de la última falla
+    heartbeat_failures = Column(Integer, nullable=False, default=0)       # fallas seguidas
+    heartbeat_rejections = Column(Integer, nullable=False, default=0)     # respuestas no auténticas (total)
+    last_heartbeat_instance = Column(String(60))                          # instancia de la API que respondió
     last_event_at = Column(DateTime(timezone=True))
     reported_sequence = Column(BigInteger, nullable=False, default=0)    # la bodega dice: publiqué hasta N
     max_received_sequence = Column(BigInteger, nullable=False, default=0)

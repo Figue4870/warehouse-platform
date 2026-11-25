@@ -45,3 +45,21 @@ def test_salta_los_puertos_ocupados(components):
     (components / "otro" / ".env").write_text("ALGO_PORT=8004\n")
     created = env(new_warehouse.create_warehouse("WH-004", components))
     assert created["BE_PORT"] == "8005" and created["FE_PORT"] == "8084"
+
+
+def test_la_bodega_nueva_tiene_su_propia_clave_de_heartbeat_y_queda_registrada(components):
+    shutil.copytree(ROOT / "docker" / "components" / "central", components / "central")
+    created = env(new_warehouse.create_warehouse("WH-004", components))
+    template = env(components / "wh_003" / ".env")
+    assert len(created["HEARTBEAT_SECRET"]) >= 16 and created["HEARTBEAT_SECRET"] != template["HEARTBEAT_SECRET"]
+    registry = dict(item.split("=", 1) for item in env(components / "central" / ".env")["WAREHOUSE_HEARTBEAT_SECRETS"].split(","))
+    assert registry["WH-004"] == created["HEARTBEAT_SECRET"]
+    assert set(registry) == {"WH-001", "WH-002", "WH-003", "WH-004"}
+
+
+def test_las_claves_de_desarrollo_coinciden_entre_bodegas_y_central():
+    central = env(ROOT / "docker" / "components" / "central" / ".env")
+    registry = dict(item.split("=", 1) for item in central["WAREHOUSE_HEARTBEAT_SECRETS"].split(","))
+    for name in ("wh_001", "wh_002", "wh_003"):
+        wh = env(ROOT / "docker" / "components" / name / ".env")
+        assert registry[wh["WH_ID"]] == wh["HEARTBEAT_SECRET"], f"{name}: la central tiene otra clave"

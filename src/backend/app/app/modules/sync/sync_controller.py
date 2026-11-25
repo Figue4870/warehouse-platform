@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from platform_common.secure_heartbeat import HeartbeatError, ReplayError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -13,8 +14,22 @@ from app.events.outbox import envelope_from_row
 from app.events.payloads import product_payload
 from app.modules.inventory.models import InventoryEntity
 from app.modules.products.models import ProductEntity
+from app.modules.sync import heartbeat
 
 router = APIRouter(prefix="/sync", tags=["Sync (central)"])
+
+
+@router.post("/heartbeat", summary="Heartbeat: la central envía un reto cifrado y la bodega responde cifrado")
+def answer_heartbeat(envelope: dict = Body(...), db: Session = Depends(get_db)):
+    """401: el reto no se pudo autenticar; 409: el reto ya se respondió; 503: la bodega no tiene clave."""
+    try:
+        return heartbeat.answer(db, envelope)
+    except heartbeat.HeartbeatNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ReplayError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except HeartbeatError as error:
+        raise HTTPException(status_code=401, detail="Reto de heartbeat no válido") from error
 
 
 def _last_sequence(db: Session) -> int:

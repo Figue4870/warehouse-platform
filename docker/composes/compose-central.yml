@@ -1,5 +1,5 @@
 # Plataforma central (Fases 6 y 7): postgres, rabbitmq, api, projector, reconciler,
-# saga, command_relay y exporter. Usa la red warehouse_platform.
+# heartbeat, saga, command_relay y exporter. Usa la red warehouse_platform.
 
 x-central: &central
   build:
@@ -11,6 +11,9 @@ x-central: &central
     AMQP_URL: amqp://${CENTRAL_RABBIT_USER:-platform}:${CENTRAL_RABBIT_PASSWORD:-platform}@central_rabbitmq:5672/%2F
     ONLINE_AFTER_SECONDS: ${ONLINE_AFTER_SECONDS:-45}
     WAREHOUSE_API_URLS: ${WAREHOUSE_API_URLS:-}
+    # Heartbeat cifrado: cada cuánto pregunta y la clave de cada bodega
+    HEARTBEAT_POLL_SECONDS: ${HEARTBEAT_POLL_SECONDS:-15}
+    WAREHOUSE_HEARTBEAT_SECRETS: ${WAREHOUSE_HEARTBEAT_SECRETS:-}
     # Fase 6: Saga
     SAGA_STEP_TIMEOUT_SECONDS: ${SAGA_STEP_TIMEOUT_SECONDS:-60}
     SAGA_ALLOW_SIMULATION: ${SAGA_ALLOW_SIMULATION:-true}
@@ -96,6 +99,15 @@ services:
     <<: *central
     container_name: central_reconciler
     command: ["python", "-m", "central.workers.reconciler"]
+    depends_on:
+      central_postgres:
+        condition: service_healthy
+
+  # Heartbeat: le pregunta a cada bodega con un reto cifrado
+  central_heartbeat:
+    <<: *central
+    container_name: central_heartbeat
+    command: ["python", "-m", "central.workers.heartbeat"]
     depends_on:
       central_postgres:
         condition: service_healthy

@@ -31,15 +31,18 @@ jobs:
           done
       - name: Compose de la central (Fase 7)
         run: docker compose --env-file docker/components/central/.env -f docker/composes/compose-central.yml -p central config -q
+      - name: Compose de un nodo de API (WH-002)
+        run: PRIMARY_HOST=10.0.0.10 docker compose --env-file docker/components/wh_002/.env -f docker/composes/compose-warehouse-api.yml -p ci-api config -q
       - name: Configuración del balanceador
         run: docker run --rm -v "$PWD/docker/nginx/lb.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
       - uses: hashicorp/setup-terraform@v3
-      - name: Terraform fmt + validate
+      - name: Terraform fmt + validate + test
         working-directory: terraform
         run: |
           terraform fmt -check -recursive
           terraform init -backend=false
           terraform validate
+          terraform test
 
   integration:
     name: Bodega real + pruebas de integración

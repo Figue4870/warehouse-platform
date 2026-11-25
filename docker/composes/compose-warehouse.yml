@@ -13,8 +13,7 @@ x-backend: &backend
     AMQP_URL: amqp://${RABBIT_USER:-warehouse}:${RABBIT_PASSWORD:-warehouse}@rabbitmq:5672/%2F
     REPORT_SIMULATED_DELAY_SECONDS: ${REPORT_SIMULATED_DELAY_SECONDS:-0}
     CENTRAL_AMQP_URL: ${CENTRAL_AMQP_URL:-amqp://platform:platform@central_rabbitmq:5672/%2F}
-    ADVERTISED_API_URL: ${ADVERTISED_API_URL:-}
-    HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-15}
+    HEARTBEAT_SECRET: ${HEARTBEAT_SECRET:-}
   restart: unless-stopped
 
 x-api: &api
