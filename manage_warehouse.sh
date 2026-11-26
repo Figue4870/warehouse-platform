@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gestión de bodegas (Linux / EC2). En Windows: .\manage.ps1
-#   ./manage_warehouse.sh init|start|stop|restart|reset|status|logs|list [central|wh_001|obs|all]
+#   ./manage_warehouse.sh init|start|stop|restart|reset|status|logs|list [central|wh_001|iot|obs|all]
 #   ./manage_warehouse.sh start-api|stop-api wh_002|central
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -11,6 +11,7 @@ SERVICE=${3:-}
 WAREHOUSE_COMPOSE="infrastructure/docker/composes/compose-warehouse.yml"
 API_NODE_COMPOSE="infrastructure/docker/composes/compose-warehouse-api.yml"
 CENTRAL_COMPOSE="infrastructure/docker/composes/compose-central.yml"
+IOT_COMPOSE="infrastructure/docker/composes/compose-iot.yml"
 OBS_COMPOSE="infrastructure/docker/composes/compose-observabilidad.yml"
 PLATFORM_NETWORK="warehouse_platform"
 
@@ -28,6 +29,7 @@ warehouses() { for d in infrastructure/docker/components/wh_*/; do basename "$d"
 compose_wh() {
     local wh=$1; shift
     if [ "$wh" = "central" ]; then compose_central "$@"; return; fi
+    if [ "$wh" = "iot" ]; then compose_iot "$@"; return; fi
     if [ "$wh" = "obs" ]; then $DOCKER compose -f "$OBS_COMPOSE" -p obs "$@"; return; fi
     local env_file="infrastructure/docker/components/${wh}/.env"
     [ -f "$env_file" ] || { echo "Error: no existe $env_file (bodegas: $(warehouses | tr '\n' ' '))"; exit 1; }
@@ -71,6 +73,13 @@ init_central_db() {
     echo "Error: no se pudo preparar la base de la central en RDS"; exit 1
 }
 
+# Fase 12: extensión IoT (no entra en "all": se levanta aparte)
+compose_iot() {
+    local args=(compose --env-file infrastructure/docker/components/iot/.env)
+    [ -f infrastructure/docker/components/iot/runtime.env ] && args+=(--env-file infrastructure/docker/components/iot/runtime.env)
+    $DOCKER "${args[@]}" -f "$IOT_COMPOSE" -p iot "$@"
+}
+
 for_targets() {
     local fn=$1; shift
     [ -n "$TARGET" ] || { echo "Error: indica la bodega (ej: wh_001) o 'all'"; show_help; exit 1; }
@@ -111,6 +120,6 @@ case "$ACTION" in
         [ -n "$TARGET" ] || { echo "Uso: $0 logs wh_001 [servicio]"; exit 1; }
         compose_wh "$TARGET" logs --tail 100 -f ${SERVICE:+"$SERVICE"}
         ;;
-    list) echo central; warehouses; echo obs ;;
+    list) echo central; warehouses; echo iot; echo obs ;;
     *) show_help; exit 1 ;;
 esac

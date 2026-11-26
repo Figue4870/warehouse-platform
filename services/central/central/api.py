@@ -24,6 +24,7 @@ from central.routers import (
     global_inventory,
     health,
     integrations,
+    iot,
     metrics,
     notifications,
     product_requests,
@@ -112,6 +113,7 @@ app.include_router(athena.router)
 app.include_router(batch.router)
 app.include_router(contracts.router)
 app.include_router(integrations.router)
+app.include_router(iot.router)
 app.include_router(dashboard.router)
 app.mount("/static", StaticFiles(directory=dashboard.STATIC_DIR, check_dir=False), name="static")
 app.mount("/ui", StaticFiles(directory=dashboard.ui_dir(), check_dir=False), name="ui")

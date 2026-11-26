@@ -27,3 +27,8 @@ scrape_configs:
         target_label: instance
         replacement: "${2}-api-${1}"
 
+  - job_name: iot
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets: ["iot_api:8000"]
+        labels: {component: iot}

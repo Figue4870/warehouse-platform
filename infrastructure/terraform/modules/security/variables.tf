@@ -23,3 +23,18 @@ variable "load_balanced" {
   }))
   default = {}
 }
+
+variable "enable_iot" {
+  type    = bool
+  default = false
+}
+
+variable "iot_mqtt_port" {
+  type    = number
+  default = 1883
+}
+
+variable "iot_api_port" {
+  type    = number
+  default = 8095
+}

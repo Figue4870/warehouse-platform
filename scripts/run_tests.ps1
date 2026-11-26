@@ -10,6 +10,7 @@
    3. terraform validate + terraform test (proveedor de AWS simulado, no crea recursos)
    4. Integración con Docker (solo con -Integracion)
 
+ Requisito: pip install -r services/warehouse/requirements-dev.txt
 #>
 param(
     [switch]$Integracion
@@ -51,7 +52,7 @@ Write-Step "1/4 Heartbeat, frontend y bodegas nuevas"
 $results["Heartbeat y frontend (pytest)"] = ($LASTEXITCODE -eq 0)
 
 Write-Step "2/4 Todas las pruebas sin Docker"
-& $python -m pytest -q -p no:cacheprovider tests/unit tests/central
+& $python -m pytest -q -p no:cacheprovider tests/unit tests/central tests/iot
 $results["Sin Docker (pytest)"] = ($LASTEXITCODE -eq 0)
 
 Write-Step "3/4 Terraform (validate + test)"

@@ -1,10 +1,12 @@
-"""Entradas de sistemas externos a la central: avisos de la Lambda, webhook de Servientrega y consulta de Proveedores."""
+"""Entradas de sistemas externos a la central: Lambda, Servientrega, alertas IoT y consulta de Proveedores."""
 
+import hashlib
 import time
+from datetime import datetime
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from platform_common.auth import Principal
+from platform_common.auth import ADMIN_BODEGA, ADMIN_GLOBAL, Principal
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,7 @@ from central import external, shipping
 from central.config import settings
 from central.database import get_db
 from central.integrations import KINDS, handle_storage_event
+from central.notifications import notify
 from central.security import MANAGEMENT, require
 
 router = APIRouter(tags=["Integraciones"])
@@ -23,6 +26,21 @@ class StorageEvent(BaseModel):
     object_key: str = Field(..., max_length=300)
     outcome: Literal["OK", "REJECTED"]
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class IotAlert(BaseModel):
+    alert_id: int
+    warehouse_id: str = Field(..., max_length=20)
+    sensor_id: str = Field(..., max_length=40)
+    sensor_type: str = Field(..., max_length=20)
+    rule: str = Field(..., max_length=40)
+    severity: Literal["INFO", "WARNING", "CRITICAL"]
+    message: str = Field(..., max_length=500)
+    opened_at: datetime
+
+    def key(self) -> str:
+        # Una sola alerta abierta por sensor y regla: sensor + regla + apertura la identifican aunque la base IoT se reinicie
+        return hashlib.sha256(f"{self.sensor_id}|{self.rule}|{self.opened_at.isoformat()}".encode()).hexdigest()[:24]
 
 
 class ShipmentUpdate(BaseModel):
@@ -64,6 +82,20 @@ async def servientrega_webhook(request: Request, db: Session = Depends(get_db)):
     result = shipping.apply_status(db, update.reference, update.tracking_number, update.status, update.detail, "webhook")
     db.commit()
     return {"reference": update.reference, "result": result}
+
+
+@router.post("/integrations/iot-alerts", summary="Alerta firmada de un sensor (llega al administrador de la bodega)")
+async def iot_alert(request: Request, db: Session = Depends(get_db)):
+    body = await _signed_body(request, settings.IOT_SHARED_SECRET)
+    try:
+        alert = IotAlert.model_validate_json(body)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors(include_url=False)) from None
+    title = f"{alert.warehouse_id}: {alert.message}"[:200]
+    created = [notify(db, role, "IOT_ALERT", title, f"Sensor {alert.sensor_id} ({alert.rule})", alert.severity,
+                      warehouse_id=alert.warehouse_id, dedupe_key=f"iot:{alert.key()}:{role}") for role in (ADMIN_BODEGA, ADMIN_GLOBAL)]
+    db.commit()
+    return {"alert_id": alert.alert_id, "result": "applied" if any(created) else "duplicate"}
 
 
 @router.get("/suppliers/{nit}", summary="Consultar un proveedor en el sistema de Proveedores (síncrono)")

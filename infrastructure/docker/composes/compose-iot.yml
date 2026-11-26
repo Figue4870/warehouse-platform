@@ -1,0 +1,121 @@
+# Fase 12: extensión IoT. Sensores -> MQTT (RabbitMQ con plugin MQTT) -> gateway de borde -> ingesta ->
+# RabbitMQ (iot.events) -> almacenamiento, alertas y analítica. Las alertas llegan a la central por la red
+# warehouse_platform. Simulador: docker compose ... run --rm iot_simulator
+#   docker compose --env-file infrastructure/docker/components/iot/.env -f infrastructure/docker/composes/compose-iot.yml -p iot up -d --build
+
+x-iot: &iot
+  build:
+    context: ../../../services
+    dockerfile: iot/Dockerfile
+  environment: &iot-env
+    DATABASE_URL: postgresql://postgres:${IOT_DB_PASSWORD:-postgres}@iot_db:5432/iot_db
+    AMQP_URL: amqp://${IOT_BROKER_USER:-iot}:${IOT_BROKER_PASSWORD:-iot}@iot_broker:5672/%2F
+    RABBITMQ_MANAGEMENT_URL: http://iot_broker:15672
+    INGESTION_URL: http://iot_api:8000
+    GATEWAY_KEY: ${IOT_GATEWAY_KEY:-}
+    CENTRAL_API_URL: ${CENTRAL_API_URL:-http://central_api:8000}
+    IOT_SHARED_SECRET: ${IOT_SHARED_SECRET:-}
+  depends_on:
+    iot_db:
+      condition: service_healthy
+    iot_broker:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  iot_broker:
+    image: rabbitmq:3.13-management-alpine
+    container_name: iot_broker
+    hostname: iot-broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${IOT_BROKER_USER:-iot}
+      RABBITMQ_DEFAULT_PASS: ${IOT_BROKER_PASSWORD:-iot}
+    ports:
+      - "${IOT_MQTT_PORT:-1883}:1883"               # sensores (MQTT)
+      - "${IOT_BROKER_MGMT_PORT:-15690}:15672"      # consola web
+    volumes:
+      - ../iot/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ../iot/rabbitmq.conf:/etc/rabbitmq/conf.d/20-iot.conf:ro
+      - iot_brokerdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  iot_db:
+    image: postgres:15-alpine
+    container_name: iot_db
+    environment:
+      POSTGRES_PASSWORD: ${IOT_DB_PASSWORD:-postgres}
+      POSTGRES_DB: iot_db
+    ports:
+      - "${IOT_DB_PORT:-5450}:5432"
+    volumes:
+      - ../../db/iot_schema.sql:/docker-entrypoint-initdb.d/01-iot-schema.sql:ro
+      - iot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iot_db -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  iot_api:
+    <<: *iot
+    container_name: iot_api
+    environment:
+      <<: *iot-env
+      INSTANCE_NAME: iot-api
+    ports:
+      - "${IOT_API_PORT:-8095}:8000"
+    networks: [default, platform]
+
+  iot_gateway:
+    <<: *iot
+    container_name: iot_gateway
+    command: ["python", "-m", "iot_service.gateway"]
+    environment:
+      <<: *iot-env
+      INSTANCE_NAME: iot-gateway
+    ports:
+      - "${IOT_GATEWAY_STATS_PORT:-8096}:8001"      # estado del buffer (GET /)
+    volumes:
+      - iot_gateway_buffer:/data
+
+  iot_storage:
+    <<: *iot
+    container_name: iot_storage
+    command: ["python", "-m", "iot_service.workers", "storage"]
+
+  iot_alerts:
+    <<: *iot
+    container_name: iot_alerts
+    command: ["python", "-m", "iot_service.workers", "alerts"]
+    networks: [default, platform]
+
+  iot_analytics:
+    <<: *iot
+    container_name: iot_analytics
+    command: ["python", "-m", "iot_service.workers", "analytics"]
+
+  # 100 sensores en 5 bodegas: docker compose ... run --rm iot_simulator --duration 180 --duplicates 0.02 ...
+  iot_simulator:
+    <<: *iot
+    container_name: iot_simulator
+    profiles: ["simulador"]
+    entrypoint: ["python", "-m", "iot_service.simulator", "--broker", "iot_broker", "--port", "1883",
+                 "--username", "${IOT_BROKER_USER:-iot}", "--password", "${IOT_BROKER_PASSWORD:-iot}"]
+    restart: "no"
+
+networks:
+  platform:
+    name: warehouse_platform
+    external: true
+
+volumes:
+  iot_brokerdata:
+  iot_pgdata:
+  iot_gateway_buffer:

@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     SHIPPING_POLL_SECONDS: int = 10
     SHIPPING_MAX_ATTEMPTS: int = 5
 
+    # Fase 12: extensión IoT (consultas y alertas de sensores)
+    IOT_API_URL: str = "http://iot_api:8000"
+    IOT_SHARED_SECRET: str = ""
+
 
 settings = Settings()
 

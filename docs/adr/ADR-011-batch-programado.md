@@ -2,7 +2,9 @@
 
 ## Contexto
 
-La Fase 8 pide procesar varias bodegas, generar un reporte, guardarlo en S3, registrar la ejecución y poder repetirla. Las opciones administradas requieren roles de servicio, que en el Learner Lab no sepueden crear, y cada servicio adicional consume crédito.
+La Fase 8 pide procesar varias bodegas, generar un reporte, guardarlo en S3, registrar la ejecución y
+poder repetirla. Las opciones administradas requieren roles de servicio, que en el Learner Lab no se
+pueden crear, y cada servicio adicional consume crédito.
 
 ## Alternativas
 

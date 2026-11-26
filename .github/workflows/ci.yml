@@ -15,8 +15,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r services/warehouse/requirements-dev.txt
-      - name: Bodega (tests/unit) y plataforma central (tests/central)
-        run: pytest tests/unit tests/central -q
+      - name: Bodega (tests/unit), plataforma central (tests/central) e IoT (tests/iot)
+        run: pytest tests/unit tests/central tests/iot -q
 
   config:
     name: Docker Compose, Nginx y Terraform válidos
@@ -33,6 +33,8 @@ jobs:
         run: docker compose --env-file infrastructure/docker/components/central/.env -f infrastructure/docker/composes/compose-central.yml -p central --profile db-local config -q
       - name: Compose de Prometheus y Grafana (Fase 11)
         run: docker compose -f infrastructure/docker/composes/compose-observabilidad.yml -p obs config -q
+      - name: Compose de la extensión IoT (Fase 12)
+        run: docker compose --env-file infrastructure/docker/components/iot/.env -f infrastructure/docker/composes/compose-iot.yml -p iot config -q
       - name: Compose de un nodo de API (WH-002)
         run: PRIMARY_HOST=10.0.0.10 CENTRAL_API_URL=http://10.0.0.200:8090 docker compose --env-file infrastructure/docker/components/wh_002/.env -f infrastructure/docker/composes/compose-warehouse-api.yml -p ci-api config -q
       - name: Configuración del balanceador

@@ -23,7 +23,7 @@ Visualización (decisión del equipo):
 - **Local:** perfil opcional `obs` (`compose-observabilidad.yml`) con Prometheus, que lee cada API por su
   contenedor cada 5 s, y Grafana con el tablero `Plataforma de bodegas` ya provisionado (paneles de
   RPS, P50/P95/P99, 5xx, reparto entre instancias, hit ratio, colas, reintentos y DLQ, conexiones y
-  bloqueos, transferencias y outbox). No hacen falta *exporters*: la API ya entrega esos datos.
+  bloqueos, transferencias, outbox e IoT). No hacen falta *exporters*: la API ya entrega esos datos.
 - **AWS:** Docker manda los logs de cada máquina a CloudWatch Logs (driver `awslogs`, un grupo por
   máquina, un stream por contenedor, 7 días). Como cada línea es JSON con `correlation_id`, una
   transferencia se sigue en CloudWatch Logs Insights.

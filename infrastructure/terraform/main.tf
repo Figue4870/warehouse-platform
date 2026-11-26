@@ -38,6 +38,10 @@ locals {
   lambda_secret       = sha256("${var.heartbeat_secret}:lambda")
   servientrega_secret = sha256("${var.heartbeat_secret}:servientrega")
 
+  # Fase 12: la central consulta el servicio IoT y este le envía las alertas (IP fija, sin dependencia circular)
+  iot_private_ip = cidrhost(data.aws_subnet.nodes.cidr_block, var.iot_private_ip_host)
+  iot_secret     = sha256("${var.heartbeat_secret}:iot")
+
   # IP privada fija de la central: las bodegas la necesitan (RabbitMQ central) y la central necesita
   # las de ellas (heartbeat). Al conocerla de antemano no hay dependencia circular entre módulos.
   central_private_ip = cidrhost(data.aws_subnet.nodes.cidr_block, var.central_private_ip_host)
@@ -96,6 +100,7 @@ module "security" {
   central_rabbit_port      = var.central_rabbit_port
   central_rabbit_mgmt_port = var.central_rabbit_mgmt_port
   load_balanced            = local.load_balanced
+  enable_iot               = var.enable_iot
 }
 
 # Reportes: bucket S3 + catálogo Glue + workgroup de Athena (antes que la central: ella recibe sus nombres)
@@ -148,6 +153,9 @@ module "central" {
     CENTRAL_DATABASE_URL = local.central_database_url
     } : {}, local.lambda_enabled ? {
     LAMBDA_FUNCTION_ARN = local.lambda_arn
+    } : {}, var.enable_iot ? {
+    IOT_API_URL       = "http://${local.iot_private_ip}:8095"
+    IOT_SHARED_SECRET = local.iot_secret
     } : {}, var.enable_analytics ? {
     # El exportador sube los datos a S3 y la API ejecuta los reportes en Athena (con LabRole, sin llaves)
     EXPORT_S3_BUCKET = module.analytics[0].bucket
@@ -245,12 +253,50 @@ module "storage_lambda" {
   shared_secret = local.lambda_secret
 }
 
+# Fase 12: extensión IoT
+module "iot" {
+  source = "./modules/ec2_node"
+  count  = var.enable_iot ? 1 : 0
+
+  name                  = "${var.project_name}-iot"
+  node_label            = "IOT"
+  component             = "iot"
+  ami_id                = data.aws_ami.ubuntu.id
+  instance_type         = var.iot_instance_type
+  subnet_id             = data.aws_subnet.nodes.id
+  private_ip            = local.iot_private_ip
+  security_group_ids    = [module.security.iot_sg_id]
+  key_name              = var.key_name
+  instance_profile_name = var.instance_profile_name
+  root_volume_size_gb   = var.root_volume_size_gb
+  repo_url              = var.repo_url
+  repo_branch           = var.repo_branch
+  aws_region            = var.aws_region
+  log_group             = lookup(local.log_groups, "iot", "")
+  runtime_env = {
+    CENTRAL_API_URL   = "http://${local.central_private_ip}:${var.central_port}"
+    IOT_SHARED_SECRET = local.iot_secret
+    IOT_GATEWAY_KEY   = sha256("${var.heartbeat_secret}:gateway")
+  }
+}
+
+# La pantalla Sensores puede llegar a cualquier nodo de la API central: todos consultan la API IoT
+resource "aws_vpc_security_group_ingress_rule" "iot_api_from_central_api_nodes" {
+  count                        = var.enable_iot && local.central_has_alb ? 1 : 0
+  security_group_id            = module.security.iot_sg_id
+  description                  = "API IoT desde los nodos de la API central"
+  referenced_security_group_id = aws_security_group.central_api_nodes[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = 8095
+  to_port                      = 8095
+}
+
 # El Learner Lab permite como máximo 9 instancias a la vez
 resource "terraform_data" "learner_lab_limits" {
   lifecycle {
     precondition {
-      condition     = 1 + var.central_api_nodes + length(var.warehouses) + length(local.api_nodes) <= 9
-      error_message = "Se superan las 9 instancias del Learner Lab (central y sus nodos + bodegas + nodos de API)."
+      condition     = 1 + var.central_api_nodes + length(var.warehouses) + length(local.api_nodes) + (var.enable_iot ? 1 : 0) <= 9
+      error_message = "Se superan las 9 instancias del Learner Lab (central y sus nodos + bodegas + nodos de API + IoT)."
     }
     precondition {
       condition     = var.central_api_nodes == 0 || var.central_database == "rds"

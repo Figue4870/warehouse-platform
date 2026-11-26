@@ -52,6 +52,9 @@ x-central: &central
     SERVIENTREGA_WEBHOOK_SECRET: ${SERVIENTREGA_WEBHOOK_SECRET:-dev-servientrega-secret}
     CENTRAL_CALLBACK_URL: http://central_api:8000
     SHIPPING_ENABLED: ${SHIPPING_ENABLED:-true}
+    # Fase 12: extensión IoT (opcional: si no está levantada, /iot responde 503 y lo demás sigue igual)
+    IOT_API_URL: ${IOT_API_URL:-http://iot_api:8000}
+    IOT_SHARED_SECRET: ${IOT_SHARED_SECRET:-dev-iot-secret}
   volumes:
     - ../../../s3-local:/app/bucket
   networks: [default, platform]

@@ -3,6 +3,7 @@
 
    .\manage.ps1 start central        -> levanta la plataforma central (Fase 7)
    .\manage.ps1 start wh_001         -> levanta una bodega ("all" = central + todas)
+   .\manage.ps1 start iot            -> levanta la extensión IoT (Fase 12; no entra en "all")
    .\manage.ps1 start obs            -> Prometheus (http://localhost:9090) y Grafana (http://localhost:3000)
    .\manage.ps1 stop wh_002          -> la apaga SIN borrar datos (o "all")
    .\manage.ps1 restart wh_001
@@ -22,6 +23,7 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 $WarehouseCompose = "infrastructure/docker/composes/compose-warehouse.yml"
 $CentralCompose = "infrastructure/docker/composes/compose-central.yml"
+$IotCompose = "infrastructure/docker/composes/compose-iot.yml"
 $ObsCompose = "infrastructure/docker/composes/compose-observabilidad.yml"
 $PlatformNetwork = "warehouse_platform"
 
@@ -49,6 +51,8 @@ function Invoke-WarehouseCompose([string]$Warehouse, [string[]]$ComposeArgs) {
         }
     } elseif ($Warehouse -eq "obs") {
         $dockerArgs = @("compose", "-f", $ObsCompose, "-p", "obs")
+    } elseif ($Warehouse -eq "iot") {
+        $dockerArgs += @("-f", $IotCompose, "-p", "iot")
     } else {
         $dockerArgs += @("-f", $WarehouseCompose, "-p", ($Warehouse -replace "_", "-"))
     }
@@ -78,6 +82,6 @@ switch ($Action) {
         if ($Service) { $logArgs += $Service }
         Invoke-WarehouseCompose $Target $logArgs
     }
-    "list"    { "central"; Get-Warehouses; "obs" }
-    default   { Get-Content $PSCommandPath -TotalCount 19 | Select-Object -Skip 2 }
+    "list"    { "central"; Get-Warehouses; "iot"; "obs" }
+    default   { Get-Content $PSCommandPath -TotalCount 20 | Select-Object -Skip 2 }
 }
