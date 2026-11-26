@@ -38,7 +38,7 @@ jobs:
       - name: Compose de un nodo de API (WH-002)
         run: PRIMARY_HOST=10.0.0.10 CENTRAL_API_URL=http://10.0.0.200:8090 docker compose --env-file infrastructure/docker/components/wh_002/.env -f infrastructure/docker/composes/compose-warehouse-api.yml -p ci-api config -q
       - name: Configuración del balanceador
-        run: docker run --rm -v "$PWD/infrastructure/docker/nginx/lb.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+        run: docker run --rm -e WH_ID=WH-001 -e NGINX_ENVSUBST_FILTER='^WH_ID$' -v "$PWD/infrastructure/docker/nginx/lb.conf:/etc/nginx/templates/default.conf.template:ro" nginx:1.27-alpine nginx -t
       - uses: hashicorp/setup-terraform@v3
       - name: Terraform fmt + validate + test
         working-directory: infrastructure/terraform
