@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     LDAP_USER_ATTRIBUTE: str = "uid"
     LDAP_USER_OBJECT_CLASS: str = "inetOrgPerson"
     LDAP_GROUP_OBJECT_CLASS: str = "groupOfNames"
-    LDAP_TIMEOUT_SECONDS: float = 5.0
+    LDAP_TIMEOUT_SECONDS: int = 5
     LDAP_MANAGE_USERS: bool = True
     # Grupo que da cada rol; {warehouse} se reemplaza por la bodega (WH-001)
     LDAP_GROUP_ADMIN_GLOBAL: str = "Administradores-Globales"
