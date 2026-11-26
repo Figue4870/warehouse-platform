@@ -19,6 +19,7 @@ const NAV = {
     { id: "inventory", label: "Inventario global", icon: "box" },
     { id: "daily", label: "Reporte diario", icon: "calendar" },
     { id: "contracts", label: "Contratos", icon: "file" },
+    { id: "sensors", label: "Sensores", icon: "sensor" },
     { id: "athena", label: "Reportes con Athena", icon: "layers" },
   ],
   LIDER: [
@@ -26,6 +27,7 @@ const NAV = {
     { id: "contracts", label: "Contratos", icon: "file" },
     { id: "daily", label: "Reporte diario", icon: "calendar" },
     { id: "inventory", label: "Inventario global", icon: "box" },
+    { id: "sensors", label: "Sensores", icon: "sensor" },
     { id: "athena", label: "Reportes con Athena", icon: "layers" },
     { id: "transfers", label: "Transferencias", icon: "truck" },
     { id: "notifications", label: "Notificaciones", icon: "bell" },
@@ -667,6 +669,53 @@ VIEWS.daily = async (el) => {
   el.querySelectorAll("[data-file]").forEach((b) => b.addEventListener("click", () => busy(b, () => downloadFile(api, `/batch/files?key=${encodeURIComponent(b.dataset.file)}`, b.dataset.file.split("/").pop())).catch((err) => toast(err.message, "bad"))));
   const pending = data.items.some((r) => ["REQUESTED", "RUNNING"].includes(r.status) || (["SUCCEEDED", "PARTIAL"].includes(r.status) && !r.verification));
   pollWhile(pending, "daily", () => VIEWS.daily(el), 4000);
+};
+
+// Sensores (extensión IoT)
+const SENSOR_TYPES = {
+  temperature: ["Temperatura", (v) => `${v.toFixed(1)} °C`], humidity: ["Humedad", (v) => `${Math.round(v)} %`],
+  energy: ["Energía", (v) => `${v.toFixed(1)} kW`], door: ["Puertas", (v) => (v >= 1 ? "abierta" : "cerradas")],
+  motion: ["Movimiento", (v) => (v >= 1 ? "detectado" : "sin movimiento")],
+};
+
+VIEWS.sensors = async (el) => {
+  render(el, `${head("Sensores de las bodegas", "")}
+    <div class="grid-3" data-kpis>${'<div class="panel"><span class="skeleton"></span></div>'.repeat(3)}</div>
+    <div class="grid-2" style="margin-top:var(--space-5)" data-warehouses></div>
+    <section style="margin-top:var(--space-5)"><div class="panel-head"><h2>Alertas abiertas</h2></div><div data-alerts>${loadingTable(["Bodega", "Sensor", "Alerta"], 3)}</div></section>`);
+  let data;
+  let alerts;
+  try {
+    [data, alerts] = await Promise.all([api("/iot/summary?minutes=5"), api("/iot/alerts")]);
+  } catch (err) {
+    el.querySelector("[data-kpis]").outerHTML = `<p class="notice notice-warn">${escapeHtml(err.message)}. El resto de la plataforma sigue funcionando.</p>`;
+    el.querySelector("[data-alerts]").innerHTML = "";
+    return;
+  }
+  el.querySelector(".page-head h1").textContent = data.open_alerts ? `Sensores: ${data.open_alerts} alerta(s) abierta(s)` : "Sensores sin alertas";
+  el.querySelector("[data-kpis]").innerHTML = [
+    ["Lecturas por segundo", fmt.int(Math.round(data.throughput_per_second)), `${fmt.int(data.readings_in_window)} en los últimos ${data.window_minutes} min`],
+    ["Latencia sensor → base (P95)", data.latency_ms.p95 === null ? "—" : `${fmt.int(Math.round(data.latency_ms.p95))} ms`, `P50 ${data.latency_ms.p50 === null ? "—" : `${fmt.int(Math.round(data.latency_ms.p50))} ms`}`],
+    ["Sensores reportando", fmt.int(data.warehouses.reduce((s, w) => s + w.sensors, 0)), `${fmt.int(data.warehouses.length)} bodegas`],
+  ].map(([label, value, note]) => `<div class="panel kpi"><span class="kpi-label">${label}</span><span class="kpi-value" style="font-size:var(--text-2xl)">${value}</span><span class="kpi-note">${escapeHtml(note)}</span></div>`).join("");
+  el.querySelector("[data-warehouses]").innerHTML = data.warehouses.length
+    ? data.warehouses.map((w) => `<section class="panel stack">
+        <div class="panel-head"><h2>${escapeHtml(w.warehouse_id)}</h2>${w.open_alerts ? `<span class="pill pill-bad">${fmt.int(w.open_alerts)} alerta(s)</span>` : '<span class="pill pill-ok">Normal</span>'}</div>
+        <dl class="facts">${Object.entries(SENSOR_TYPES).filter(([t]) => w.by_type[t]).map(([t, [label, show]]) => `<div><dt>${label} · ${fmt.int(w.by_type[t].sensors)}</dt><dd class="num">${escapeHtml(t === "door" || t === "motion" ? show(w.by_type[t].max) : show(w.by_type[t].avg))}</dd></div>`).join("")}</dl>
+        <p class="subtle">${fmt.int(w.readings)} lecturas · ${fmt.int(w.late_readings)} llegaron fuera de orden · ${fmt.int(w.gaps)} sin recibir</p>
+      </section>`).join("")
+    : emptyState("Ningún sensor ha reportado todavía");
+  el.querySelector("[data-alerts]").innerHTML = table({
+    columns: [
+      { label: "Bodega", render: (a) => escapeHtml(a.warehouse_id) },
+      { label: "Sensor", render: (a) => `<span class="mono">${escapeHtml(a.sensor_id)}</span>` },
+      { label: "Alerta", render: (a) => `<span class="status ${SEVERITY[a.severity] || "status-warn"}">${escapeHtml(a.message)}</span>` },
+      { label: "Desde", render: (a) => fmt.ago(a.opened_at) },
+    ],
+    rows: alerts,
+    empty: "No hay alertas abiertas",
+  });
+  pollWhile(true, "sensors", () => VIEWS.sensors(el), 10000);
 };
 
 // Reportes con Athena

@@ -13,3 +13,7 @@ output "alb_sg_id" {
 output "api_nodes_sg_id" {
   value = length(aws_security_group.api_nodes) > 0 ? aws_security_group.api_nodes[0].id : null
 }
+
+output "iot_sg_id" {
+  value = length(aws_security_group.iot) > 0 ? aws_security_group.iot[0].id : null
+}

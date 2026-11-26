@@ -1,5 +1,5 @@
 # Fase 11 (opcional, solo local): Prometheus lee /metrics/prometheus de cada API y Grafana dibuja el tablero.
-# Se conecta a la red warehouse_platform, donde están las APIs de la central y de las bodegas.
+# Se conecta a la red warehouse_platform, donde están las APIs de la central, de las bodegas y de IoT.
 #   .\manage.ps1 start obs   ->  http://localhost:9090 (Prometheus) y http://localhost:3000 (Grafana)
 
 services:

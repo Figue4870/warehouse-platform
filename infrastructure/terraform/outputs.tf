@@ -66,3 +66,12 @@ output "lambda" {
     triggers      = "contracts/*document.pdf, reports/daily/*.json"
   } : null
 }
+
+output "iot" {
+  description = "Fase 12: extensión IoT"
+  value = var.enable_iot ? {
+    public_ip = module.iot[0].public_ip
+    mqtt      = "mqtt://${module.iot[0].public_ip}:1883"
+    simulator = "ssh -i labsuser.pem ubuntu@${module.iot[0].public_ip} 'cd /opt/warehouse-platform && ./manage_warehouse.sh logs iot iot_gateway'"
+  } : null
+}

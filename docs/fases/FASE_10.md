@@ -5,8 +5,8 @@
 Cada componente puede fallar. Una falla se resuelve de una de cuatro maneras:
 
 1. **Degradar:** seguir atendiendo sin el componente (Redis caído: se lee de PostgreSQL).
-2. **Esperar:** guardar el trabajo de forma durable y continuar cuando vuelva (outbox, colas
-   durables).
+2. **Esperar:** guardar el trabajo de forma durable y continuar cuando vuelva (outbox, colas durables,
+   buffer del gateway IoT).
 3. **Reintentar:** si el error es transitorio, con espera creciente y un límite.
 4. **Apartar o compensar:** si el error es permanente, a la DLQ; si ya se cambió estado en otro
    dominio, compensar (Saga).
@@ -44,8 +44,8 @@ cola de trabajo --error transitorio--> intercambio .retry --> cola .retry (TTL =
 | Máquina de la API central caída (AWS) | No | No | No | El ALB la saca por `/health` y el otro nodo atiende; los dos firman con la misma clave (vive en el RDS) |
 | Base central (RDS) reiniciándose | El pool reintenta la conexión | No | No | La API central responde 503 mientras tanto; las bodegas siguen y la central se pone al día con secuencias |
 | Directorio LDAP caído | No | No | No | El inicio de sesión responde 503 (no 401: la contraseña no es el problema); los tokens ya emitidos siguen valiendo |
-| Mensaje duplicado | No | No | No | `event_id` en `processed_events`, `notified_at` en alertas |
-| Evento atrasado o fuera de orden | No | No | No | La central aplica saldos solo con versión mayor |
+| Mensaje duplicado | No | No | No | `event_id` en `processed_events`, `notified_at` en alertas, `event_id` en lecturas IoT |
+| Evento atrasado o fuera de orden | No | No | No | La central aplica saldos solo con versión mayor; IoT ordena por `sequence_number` |
 | Bodega origen no responde la reserva | No | No | Sí: `RELEASE` | Liberar es seguro aunque nunca haya reservado (deja una marca que rechaza un `RESERVE` atrasado) |
 | Bodega destino no responde | No | No | Sí: primero `CANCEL_RECEIVE`, luego `RELEASE` | No se compensa a ciegas: si el destino sí recibió, se sigue con `COMMIT` |
 | Servientrega no responde | Sí, 5 s, 10 s, 20 s... hasta 5 | No | Sí: `RELEASE` | El envío no se contrató; la mercancía sigue en el origen |
@@ -55,6 +55,9 @@ cola de trabajo --error transitorio--> intercambio .retry --> cola .retry (TTL =
 | Lambda falla | AWS reintenta 2 veces | No | No | La función es idempotente (resultado por llave + ETag) |
 | Aviso de la Lambda perdido | La central lee el resultado de S3 | No | No | El resultado vive en S3, el aviso solo acelera |
 | Batch falla | Hasta 3 veces solo, luego manual | No | No | La ejecución queda `FAILED` con su error y se notifica al administrador global |
+| Red entre sensores y gateway | El sensor guarda y reenvía | No | No | QoS 1 de MQTT y buffer en el sensor simulado |
+| Ingesta IoT caída | El gateway reintenta con espera | No | No | Buffer en disco del gateway; se vacía en orden al volver |
+| Central caída al enviar una alerta IoT | Con cada lectura nueva | No | No | La alerta queda guardada con `notified_at` vacío |
 
 ## Central con dos nodos (AWS)
 
@@ -75,7 +78,7 @@ navegador / Lambda --> ALB central (:8090, chequeo /health cada 15 s)
 
 ## Evidencia
 
-Pruebas sin infraestructura (`pytest tests/unit tests/central`):
+Pruebas sin infraestructura (`pytest tests/unit tests/central tests/iot`):
 
 | Comportamiento | Prueba |
 |---|---|
@@ -87,6 +90,7 @@ Pruebas sin infraestructura (`pytest tests/unit tests/central`):
 | Compensaciones de la Saga y Servientrega | `tests/central/test_saga.py` |
 | Lambda: PDF incompleto, aviso falso o vencido, aviso perdido | `tests/central/test_batch_lambda_contracts.py` |
 | Batch: un día fallido no se reintenta para siempre | `test_una_fecha_fallida_se_reintenta_solo_hasta_el_limite` |
+| IoT: duplicados, fuera de orden, buffer sin red | `tests/iot/test_iot.py` |
 | Directorio caído: 503 y no 401 | `tests/central/test_ldap_directory.py::test_directorio_caido_responde_503_y_no_401` |
 | Nodos de la central solo con RDS, ALB con los dos nodos | `infrastructure/terraform/tests/learner_lab.tftest.hcl` (`tofu test`) |
 

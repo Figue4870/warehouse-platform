@@ -253,3 +253,27 @@ variable "lambda_role_name" {
   type        = string
   default     = "LabRole"
 }
+
+# Fase 12: extensión IoT (una EC2 más; apagada por defecto para no gastar crédito)
+variable "enable_iot" {
+  description = "Crear la máquina de la extensión IoT (broker MQTT, gateway, ingesta y workers)."
+  type        = bool
+  default     = false
+}
+
+variable "iot_instance_type" {
+  description = "Tipo de EC2 de la extensión IoT."
+  type        = string
+  default     = "t3.small"
+
+  validation {
+    condition     = can(regex("^t[23]a?\\.(nano|micro|small|medium|large)$", var.iot_instance_type))
+    error_message = "Usa un tipo t2/t3 (nano, micro, small, medium o large): el Learner Lab no permite otros."
+  }
+}
+
+variable "iot_private_ip_host" {
+  description = "Host de la subred usado como IP privada fija de la máquina IoT."
+  type        = number
+  default     = 201
+}

@@ -15,7 +15,7 @@ La Fase 10 pide decidir, para cada error, si se reintenta, si va a la DLQ y si r
 `PermanentError` para errores que no cambian con el tiempo (formato, referencia inexistente) y DLQ
 inmediata; cualquier otra excepción usa la cola de reintento con TTL hasta `WORKER_MAX_RETRIES`. Las
 dependencias opcionales degradan (Redis) y las necesarias esperan en almacenamiento durable (outbox,
-colas). Las operaciones entre bodegas se compensan en la Saga.
+colas, buffer IoT). Las operaciones entre bodegas se compensan en la Saga.
 
 ## Consecuencias
 

@@ -49,7 +49,8 @@ Implementación sin dependencias en `services/common/platform_common/metrics.py`
 
 La central agrega el estado de la plataforma: `warehouse_online`, `warehouse_events_missing`,
 `warehouse_outbox_pending`, `saga_transfers{state}`, `shipments{status}`, `contracts{status}`,
-`central_commands_pending` y `batch_last_success_age_seconds`.
+`central_commands_pending` y `batch_last_success_age_seconds`. IoT: `iot_readings_ingested_total`,
+`iot_open_alerts`, colas `iot.*`.
 
 Las rutas se registran con su plantilla (`/inventory/{product_id}`), no con cada id, para que el número
 de series no crezca con los datos. Si una fuente falla (RabbitMQ caído), `/metrics/prometheus` sigue
@@ -73,6 +74,7 @@ cargados y se ve sin iniciar sesión (solo lectura).
 | API de las bodegas | RPS por bodega, P50/P95/P99, errores 5xx, P95 por bodega, reparto entre las instancias de WH-002 |
 | Caché, colas y base de datos | Hit ratio de Redis, mensajes en cola, reintentos y DLQ, conexiones, esperas de bloqueo, P95 de SQL |
 | Central | Transferencias por estado, outbox de las bodegas, comandos de la Saga sin publicar |
+| IoT | Sensores y alertas abiertas, lecturas aceptadas por segundo |
 
 Durante una prueba de carga, el panel *Reparto entre instancias* muestra si el balanceador reparte
 parejo y *Esperas de bloqueo* cuántas peticiones esperan la fila de un producto.

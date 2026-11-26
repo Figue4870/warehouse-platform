@@ -17,6 +17,7 @@ locals {
     { central = "/${var.project_name}/central" },
     { for key, wh in var.warehouses : key => "/${var.project_name}/${wh.wh_id}" },
     var.central_api_nodes > 0 ? { central_api = "/${var.project_name}/central-api" } : {},
+    var.enable_iot ? { iot = "/${var.project_name}/iot" } : {},
   ) : {}
 }
 

@@ -79,8 +79,8 @@ Un registrador no puede registrar un `ADJUSTMENT` directo: debe pasar por la sol
 |---|---|---|
 | Bodega (`:8081`, `:8082`…) | Registrador | Registrar movimiento (búsqueda por SKU o nombre, lote, precio, contraparte), solicitudes |
 | | Administrador de bodega | Inventario, catálogo local, solicitudes por aprobar, alertas, transferencias |
-| Central (`:8090/dashboard`) | Administrador global | Bodegas, tablero, catálogo universal, solicitudes, usuarios, notificaciones, transferencias, inventario global, reporte diario, contratos, Athena |
-| | Líder | Tablero, contratos, reporte diario, inventario global, Athena, transferencias, notificaciones |
+| Central (`:8090/dashboard`) | Administrador global | Bodegas, tablero, catálogo universal, solicitudes, usuarios, notificaciones, transferencias, inventario global, reporte diario, contratos, sensores, Athena |
+| | Líder | Tablero, contratos, reporte diario, inventario global, sensores, Athena, transferencias, notificaciones |
 
 Ambas páginas comparten `services/web-ui` (estilos, componentes y cliente de la API).
 

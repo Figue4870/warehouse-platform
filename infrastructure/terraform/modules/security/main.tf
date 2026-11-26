@@ -212,3 +212,62 @@ resource "aws_vpc_security_group_ingress_rule" "redis_from_api_nodes" {
   from_port                    = each.value.redis_port
   to_port                      = each.value.redis_port
 }
+
+# Fase 12: extensión IoT. MQTT para los sensores; la API solo la consulta la central
+resource "aws_security_group" "iot" {
+  count       = var.enable_iot ? 1 : 0
+  name        = "${var.project_name}-iot"
+  description = "IoT: MQTT publico para sensores; API solo desde la central; SSH solo admin"
+  vpc_id      = var.vpc_id
+
+  tags = { Name = "${var.project_name}-iot" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "iot_mqtt" {
+  count             = var.enable_iot ? 1 : 0
+  security_group_id = aws_security_group.iot[0].id
+  description       = "MQTT de los sensores"
+  cidr_ipv4         = var.allowed_cidr
+  ip_protocol       = "tcp"
+  from_port         = var.iot_mqtt_port
+  to_port           = var.iot_mqtt_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "iot_api_from_central" {
+  count                        = var.enable_iot ? 1 : 0
+  security_group_id            = aws_security_group.iot[0].id
+  description                  = "API IoT desde la central"
+  referenced_security_group_id = aws_security_group.central.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.iot_api_port
+  to_port                      = var.iot_api_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "iot_ssh" {
+  count             = var.enable_iot ? 1 : 0
+  security_group_id = aws_security_group.iot[0].id
+  description       = "SSH (solo admin)"
+  cidr_ipv4         = var.admin_cidr
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
+}
+
+resource "aws_vpc_security_group_egress_rule" "iot_all" {
+  count             = var.enable_iot ? 1 : 0
+  security_group_id = aws_security_group.iot[0].id
+  description       = "Salida libre"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# Las alertas de los sensores llegan a la API central por la red privada
+resource "aws_vpc_security_group_ingress_rule" "central_api_from_iot" {
+  count                        = var.enable_iot ? 1 : 0
+  security_group_id            = aws_security_group.central.id
+  description                  = "API central desde IoT (alertas)"
+  referenced_security_group_id = aws_security_group.iot[0].id
+  ip_protocol                  = "tcp"
+  from_port                    = var.central_port
+  to_port                      = var.central_port
+}

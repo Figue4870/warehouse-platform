@@ -23,3 +23,6 @@ terraform.tfvars
 infrastructure/docker/components/*/runtime.env
 .build/
 
+# Corridas locales del experimento IoT
+iot_corrida.md
+simulacion.json

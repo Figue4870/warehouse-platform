@@ -150,6 +150,32 @@ run "sin_analytics_no_hay_lambda" {
   }
 }
 
+run "iot_opcional_conectado_a_la_central" {
+  command = apply
+  variables {
+    enable_iot = true
+  }
+
+  assert {
+    condition     = output.iot != null && length(module.iot) == 1
+    error_message = "Con enable_iot debe existir la máquina IoT."
+  }
+  assert {
+    condition = (
+      strcontains(module.iot[0].user_data, "CENTRAL_API_URL=http://172.31.0.200:8090") &&
+      strcontains(module.central.user_data, "IOT_API_URL=http://172.31.0.201:8095") &&
+      strcontains(module.central.user_data, "IOT_SHARED_SECRET=${sha256("secreto-de-prueba-0123456789:iot")}")
+    )
+    error_message = "La central y la máquina IoT deben conocerse por IP privada y compartir la clave de las alertas."
+  }
+  assert {
+    condition = (
+      strcontains(module.iot[0].user_data, "\"awslogs-group\": \"/warehouse-platform/iot\"") &&
+      length(aws_vpc_security_group_ingress_rule.iot_api_from_central_api_nodes) == 1
+    )
+    error_message = "La máquina IoT manda sus logs a su grupo y su API acepta a los dos nodos de la central."
+  }
+}
 
 run "central_con_rds_y_dos_nodos_detras_del_alb" {
   command = apply
